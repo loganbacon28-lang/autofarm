@@ -1,0 +1,1115 @@
+local DropFolder = workspace:FindFirstChild("Ignored") and workspace.Ignored:FindFirstChild("Drop")
+local CashierFolder = workspace:FindFirstChild("Cashiers")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
+
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+
+local lastATMCFrame = nil
+local visited = {}
+local MAX_DROP_DISTANCE = 50
+local isPickingUp = false
+local activeATM = nil
+local activeATMPos = nil
+-- Gate that prevents double-counting. Race condition: watchDropFolder ChildAdded fires
+-- and counts the drop, then collectDropsAfterBreak finds the same drop still in workspace
+-- (server hasn't removed it yet) and counts it again. This table stops that.
+local pickedUpDrops = {}
+
+local HEAVY_PUNCH_WINDUP = 0.5
+local HEAVY_PUNCH_HOLD = 5
+local HEAVY_PUNCH_COOLDOWN = 1
+local KNIFE_WINDUP = 0.3
+local KNIFE_HOLD = 5
+local KNIFE_COOLDOWN = 0.5
+local MAX_NO_DAMAGE_PUNCHES = 3
+local OPEN_SIZE_TOLERANCE = 0.2
+local OPEN_SIZE_AVAILABLE_Z = 0.09999994933605194
+local ATM_RADIUS = 20
+local RADIUS_SCAN_INTERVAL = 0.5
+
+-- ══ HIDDEN FARM MODE CONSTANTS ══
+local HF_RAYCAST_DIST   = 25     -- studs to raycast downward from wedge
+local HF_HOVER_ABOVE    = -0.5    -- studs above found floor (lower = more underground)
+local HF_MIN_DEPTH      = 2      -- wedge must be at least this far above hidden Y
+local HF_CHAR_HEIGHT    = 5      -- approximate HRP-to-feet character height
+local HF_BELOW_FLOOR    = 1.8    -- studs below floor surface when clipping in (no gap)
+-- Groups where hidden mode failed this session — fall back to normal for these
+local hiddenFailedGroups = {}
+-- Clear failed groups each full loop so ATMs get re-evaluated after reset
+local function clearHiddenFailed() hiddenFailedGroups = {} end
+
+getgenv().ATM_RUNNING = false
+getgenv().ATM_STARTED = false
+getgenv().RADIUS_ENABLED = false
+getgenv().FAST_BREAK = false
+getgenv().HIDDEN_FARM = false
+
+local farmStart = nil
+local totalElapsed = 0
+local totalEarned = 0
+local punchCount = 0
+local atmCount = 0
+local dropsCollected = 0
+local atmsSkipped = 0
+local currentAction = "Press Start to begin farming."
+
+local SHOP_LOCATIONS = {
+	["[Knife] - $169"]                  = CFrame.new(-277.649994, 18.8493271, -236.000046, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+	["[RPG] - $22510"]                  = CFrame.new(113.624893, -29.6487064, -267.469269, -0.999999762, -0.000690576038, -8.63220048e-05, -0.000690576038, 0.999999762, -2.98059604e-08, 8.63220048e-05, 2.98059604e-08, -1),
+	["5 [RPG Ammo] - $1126"]            = CFrame.new(118.66507, -29.6498013, -267.469788, -1, 0.000172614207, -8.63816167e-05, 0.000172673812, 0.999999762, -0.000690568588, 8.62623929e-05, -0.000690583489, -0.999999762),
+	["[Flamethrower] - $10130"]         = CFrame.new(-157.122437, 50.9133568, -105.401451),
+	["140 [Flamethrower Ammo] - $1126"] = CFrame.new(-157.122437, 50.9133568, -105.401451),
+}
+
+local function getHRP()
+	local char = player.Character
+	if not char then return nil end
+	return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getHum()
+	local char = player.Character
+	if not char then return nil end
+	return char:FindFirstChildOfClass("Humanoid")
+end
+
+local function formatTime(seconds)
+	local h = math.floor(seconds / 3600)
+	local m = math.floor((seconds % 3600) / 60)
+	local s = seconds % 60
+	if h > 0 then return string.format("%dh %dm %ds", h, m, s)
+	elseif m > 0 then return string.format("%dm %ds", m, s)
+	else return string.format("%ds", s) end
+end
+
+local function formatMoney(amount)
+	if amount >= 1000000 then return string.format("$%.1fM", amount / 1000000)
+	elseif amount >= 1000 then return string.format("$%.1fK", amount / 1000)
+	else return string.format("$%d", amount) end
+end
+
+local function getDropValue(drop)
+	local billboard = drop:FindFirstChildOfClass("BillboardGui")
+	if not billboard then return 0 end
+	-- GetDescendants searches the ENTIRE BillboardGui tree, not just direct children.
+	-- This handles any nesting (BillboardGui > Frame > TextLabel, etc).
+	-- Strip $, brackets, commas, spaces, and % signs, then grab the first number.
+	for _, v in ipairs(billboard:GetDescendants()) do
+		if v:IsA("TextLabel") and v.Text ~= "" then
+			local clean = v.Text:gsub("[%$%[%]%+%%%s]", ""):gsub(",", ""):match("%d+")
+			local val = tonumber(clean)
+			if val and val > 0 then return val end
+		end
+	end
+	return 0
+end
+
+local function getElapsed()
+	if not getgenv().ATM_RUNNING or not farmStart then return totalElapsed end
+	return totalElapsed + (os.time() - farmStart)
+end
+
+local function isCashierOpen(cashierGroup)
+	local openPart = cashierGroup:FindFirstChild("Open")
+	if openPart and openPart:IsA("BasePart") then
+		return math.abs(openPart.Size.Z - OPEN_SIZE_AVAILABLE_Z) < OPEN_SIZE_TOLERANCE
+	end
+	local h = cashierGroup:FindFirstChildOfClass("Humanoid")
+	if h then return h.Health > 0 end
+	return false
+end
+
+local function findVaults()
+	local vaults = {}
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if v.Name == "VAULT" and v:IsA("Model") then table.insert(vaults, v) end
+	end
+	return vaults
+end
+
+local function isVaultOpen(vault)
+	local h = vault:FindFirstChildOfClass("Humanoid")
+	if h then return h.Health > 0 end
+	local head = vault:FindFirstChild("Head")
+	if head and head:FindFirstChild("HealthGui") then return true end
+	return false
+end
+
+local function countWedges(cashierGroup)
+	local count = 0
+	for _, v in ipairs(cashierGroup:GetChildren()) do
+		if v.Name == "Wedge" and v:IsA("BasePart") then count += 1 end
+	end
+	return count
+end
+
+local function getATMOffset(cashierGroup)
+	if countWedges(cashierGroup) >= 2 then return CFrame.new(0, -4, 0.5)
+	else return CFrame.new(0, 0, 0) end
+end
+
+local function getATMPosition(cashierGroup)
+	local wedge = cashierGroup:FindFirstChild("Wedge")
+	if wedge then return wedge.Position end
+	local h = cashierGroup:FindFirstChild("Head")
+	if h then return h.Position end
+	return nil
+end
+
+-- ══ HIDDEN FARM POSITION CALCULATOR ══
+-- Uses raycasting to find the real floor under the ATM/cashier,
+-- then returns a CFrame that hides the player below the structure.
+--
+-- Strategy:
+--   1. Raycast downward from the wedge, excluding the cashier group,
+--      to find the floor surface beneath it.
+--   2. Calculate gap height = wedge.Y - floor.Y
+--   3. If gap >= character height: stand upright in the gap (fully hidden in the cavity)
+--   4. If gap < character height but > 0: clip player slightly below the floor surface.
+--      PlatformStand prevents physics from ejecting them.
+--   5. If no floor found: use a fixed 6-stud drop below the wedge.
+--   6. If the result would put the player too close to the wedge (< HF_MIN_DEPTH),
+--      the ATM has no usable cavity → return nil (fall back to normal).
+--
+-- Returned CFrame is always upright (no rotation), so the character never flips.
+local function findHiddenCFrame(cashierGroup, wedgeBlock)
+	-- Skip groups that already failed this loop cycle
+	if hiddenFailedGroups[cashierGroup] then return nil end
+
+	local wedgePos = wedgeBlock.Position
+
+	-- Raycast params: exclude the cashier structure so we hit the world floor, not the counter
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = {cashierGroup}
+	params.FilterType = Enum.RaycastFilterType.Exclude
+
+	-- Cast from just below the wedge center downward
+	local origin = Vector3.new(wedgePos.X, wedgePos.Y - 0.5, wedgePos.Z)
+	local result = workspace:Raycast(origin, Vector3.new(0, -HF_RAYCAST_DIST, 0), params)
+
+	local hiddenY
+	if result then
+		local floorY = result.Position.Y
+		local gap    = wedgePos.Y - floorY
+
+		if gap >= HF_CHAR_HEIGHT then
+			-- Roomy cavity: stand with feet just above the floor
+			hiddenY = floorY + HF_HOVER_ABOVE
+		else
+			-- Tight or no cavity: clip slightly below the floor surface
+			-- PlatformStand will keep us here despite physics
+			hiddenY = floorY - HF_BELOW_FLOOR
+		end
+	else
+		-- No floor detected within range — drop a fixed amount
+		hiddenY = wedgePos.Y - 8
+	end
+
+	-- Reject if the hidden Y is too close to the wedge (not hidden at all)
+	if hiddenY >= wedgePos.Y - HF_MIN_DEPTH then
+		return nil
+	end
+
+	-- Return a clean upright CFrame at the hidden position (same X/Z as wedge)
+	return CFrame.new(wedgePos.X, hiddenY, wedgePos.Z)
+end
+
+local function snapshotDrops()
+	local snapshot = {}
+	if not DropFolder then return snapshot end
+	for _, drop in ipairs(DropFolder:GetChildren()) do
+		if drop.Name == "MoneyDrop" then snapshot[drop] = true end
+	end
+	return snapshot
+end
+
+local function safeTeleport(cframe)
+	local hrp = getHRP()
+	if not hrp then return end
+	pcall(function() hrp.CFrame = cframe end)
+end
+
+local function pickupDrop(drop)
+	if not drop or not drop.Parent then return end
+	local hrp = getHRP()
+	if not hrp then return end
+	local dropValue = getDropValue(drop)
+	local pos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
+	if not pos then return end
+	pcall(function() hrp.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
+	task.wait(0.03)
+	if not drop.Parent then return end
+	local cd = drop:FindFirstChildOfClass("ClickDetector")
+	if cd then fireclickdetector(cd, 0, "MouseClick")
+	else firetouchinterest(hrp, drop, true) task.wait(0.02) firetouchinterest(hrp, drop, false) end
+	-- Guard is ONLY around the counter — collection itself runs every time (harmless duplicate
+	-- clicks do nothing server-side), but totalEarned only increments once per drop.
+	if not pickedUpDrops[drop] then
+		pickedUpDrops[drop] = true
+		if dropValue > 0 then totalEarned += dropValue end
+		dropsCollected += 1
+	end
+end
+
+local function getKnife()
+	local char = player.Character
+	if not char then return nil end
+	return char:FindFirstChild("[Knife]") or player.Backpack:FindFirstChild("[Knife]")
+end
+
+local function hasKnife() return getKnife() ~= nil end
+
+local function buyKnife()
+	local hrp = getHRP()
+	if not hrp then return false end
+	currentAction = "Buying Knife..."
+	pcall(function() hrp.CFrame = SHOP_LOCATIONS["[Knife] - $169"] end)
+	task.wait(0.4)
+	local shopFolder = workspace:FindFirstChild("Ignored") and workspace.Ignored:FindFirstChild("Shop")
+	if not shopFolder then return false end
+	local knifeItem = shopFolder:FindFirstChild("[Knife] - $169")
+	if not knifeItem then return false end
+	local cd = knifeItem:FindFirstChildOfClass("ClickDetector")
+	if not cd then return false end
+	fireclickdetector(cd, 0, "MouseClick")
+	task.wait(0.5)
+	return hasKnife()
+end
+
+local function ensureKnife()
+	if hasKnife() then return true end
+	return buyKnife()
+end
+
+local function knifeHeavySwing(atmHumanoid)
+	if not getgenv().ATM_RUNNING then return false, 0 end
+	local char = player.Character
+	if not char then return false, 0 end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false, 0 end
+	local knife = getKnife()
+	if not knife then return false, 0 end
+	local hpBefore = atmHumanoid and atmHumanoid.Health or 0
+	hum:EquipTool(knife)
+	task.wait(KNIFE_WINDUP)
+	if not getgenv().ATM_RUNNING then return false, 0 end
+	knife:Activate()
+	task.wait(KNIFE_HOLD)
+	task.wait(KNIFE_COOLDOWN)
+	local hpAfter = atmHumanoid and atmHumanoid.Health or 0
+	punchCount += 1
+	return true, hpBefore - hpAfter
+end
+
+local radiusPaintSignal = DrawingImmediate.GetPaint(1)
+
+local function drawCircleOnGround(center, radius, color, opacity, segments)
+	segments = segments or 32
+	local points = {}
+	for i = 0, segments - 1 do
+		local angle = (i / segments) * math.pi * 2
+		local x = center.X + math.cos(angle) * radius
+		local z = center.Z + math.sin(angle) * radius
+		local screenPos, onScreen = Camera:WorldToViewportPoint(Vector3.new(x, center.Y, z))
+		table.insert(points, {pos = Vector2.new(screenPos.X, screenPos.Y), onScreen = onScreen})
+	end
+	for i = 1, #points do
+		local a = points[i]
+		local b = points[(i % #points) + 1]
+		if a.onScreen or b.onScreen then DrawingImmediate.Line(a.pos, b.pos, color, opacity, 1) end
+	end
+end
+
+radiusPaintSignal:Connect(function()
+	if not getgenv().RADIUS_ENABLED then return end
+	if not activeATM or not activeATMPos then return end
+	local sc, onScreen = Camera:WorldToViewportPoint(activeATMPos)
+	if not onScreen then return end
+	drawCircleOnGround(activeATMPos, ATM_RADIUS, Color3.fromRGB(255, 255, 255), 1, 32)
+	DrawingImmediate.Text(Vector2.new(sc.X - 30, sc.Y - 20), 0, 13, Color3.fromRGB(255, 255, 255), 1, activeATM.Name .. " | ACTIVE TARGET", false)
+end)
+
+-- ══════════════════════════════════════
+-- GUI
+-- ══════════════════════════════════════
+local gui = Instance.new("ScreenGui")
+gui.Name = "ATMFarmer"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = gethui()
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 390, 0, 700)
+main.Position = UDim2.new(0, 12, 0.5, -350)
+main.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.Parent = gui
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Color3.fromRGB(32, 32, 38)
+mainStroke.Thickness = 1
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 52)
+header.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
+header.BorderSizePixel = 0
+header.Parent = main
+Instance.new("UICorner", header).CornerRadius = UDim.new(0, 14)
+local hfix = Instance.new("Frame")
+hfix.Size = UDim2.new(1, 0, 0.5, 0)
+hfix.Position = UDim2.new(0, 0, 0.5, 0)
+hfix.BackgroundColor3 = Color3.fromRGB(16, 16, 19)
+hfix.BorderSizePixel = 0
+hfix.Parent = header
+
+local iconLbl = Instance.new("ImageLabel")
+iconLbl.Size = UDim2.new(0, 26, 0, 26)
+iconLbl.Position = UDim2.new(0, 12, 0.5, -13)
+iconLbl.BackgroundTransparency = 1
+iconLbl.Image = "rbxassetid://82352293916728"
+iconLbl.ScaleType = Enum.ScaleType.Fit
+iconLbl.Parent = header
+
+local headerTitle = Instance.new("TextLabel")
+headerTitle.Size = UDim2.new(1, -150, 1, 0)
+headerTitle.Position = UDim2.new(0, 46, 0, 0)
+headerTitle.BackgroundTransparency = 1
+headerTitle.Text = "ATM Farmer"
+headerTitle.TextColor3 = Color3.fromRGB(235, 235, 240)
+headerTitle.TextSize = 15
+headerTitle.Font = Enum.Font.GothamBold
+headerTitle.TextXAlignment = Enum.TextXAlignment.Left
+headerTitle.TextYAlignment = Enum.TextYAlignment.Center
+headerTitle.Parent = header
+
+local shopOpenBtn = Instance.new("TextButton")
+shopOpenBtn.Size = UDim2.new(0, 68, 0, 26)
+shopOpenBtn.Position = UDim2.new(1, -106, 0.5, -13)
+shopOpenBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+shopOpenBtn.Text = "   Shop"
+shopOpenBtn.TextColor3 = Color3.fromRGB(140, 140, 158)
+shopOpenBtn.TextSize = 11
+shopOpenBtn.Font = Enum.Font.GothamBold
+shopOpenBtn.BorderSizePixel = 0
+shopOpenBtn.Parent = header
+Instance.new("UICorner", shopOpenBtn).CornerRadius = UDim.new(0, 7)
+Instance.new("UIStroke", shopOpenBtn).Color = Color3.fromRGB(34, 34, 44)
+local shopBtnIcon = Instance.new("ImageLabel")
+shopBtnIcon.Size = UDim2.new(0, 12, 0, 12)
+shopBtnIcon.Position = UDim2.new(0, 9, 0.5, -6)
+shopBtnIcon.BackgroundTransparency = 1
+shopBtnIcon.Image = "rbxassetid://127805931579487"
+shopBtnIcon.ImageColor3 = Color3.fromRGB(130, 130, 148)
+shopBtnIcon.ScaleType = Enum.ScaleType.Fit
+shopBtnIcon.Parent = shopOpenBtn
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 26, 0, 26)
+closeBtn.Position = UDim2.new(1, -36, 0.5, -13)
+closeBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+closeBtn.Text = "x"
+closeBtn.TextColor3 = Color3.fromRGB(148, 148, 162)
+closeBtn.TextSize = 12
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = header
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 7)
+Instance.new("UIStroke", closeBtn).Color = Color3.fromRGB(34, 34, 44)
+closeBtn.MouseButton1Click:Connect(function()
+	getgenv().ATM_RUNNING = false getgenv().ATM_STARTED = false
+	getgenv().RADIUS_ENABLED = false getgenv().FAST_BREAK = false getgenv().HIDDEN_FARM = false
+	local h = getHum() if h then h.PlatformStand = false end
+	gui:Destroy()
+end)
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -52)
+scroll.Position = UDim2.new(0, 0, 0, 52)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 2
+scroll.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 50)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.Parent = main
+
+local scrollLayout = Instance.new("UIListLayout")
+scrollLayout.Padding = UDim.new(0, 8)
+scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+scrollLayout.Parent = scroll
+
+local scrollPad = Instance.new("UIPadding")
+scrollPad.PaddingTop = UDim.new(0, 10) scrollPad.PaddingBottom = UDim.new(0, 12)
+scrollPad.PaddingLeft = UDim.new(0, 10) scrollPad.PaddingRight = UDim.new(0, 10)
+scrollPad.Parent = scroll
+
+local function makeCard(order)
+	local card = Instance.new("Frame")
+	card.Size = UDim2.new(1, 0, 0, 0) card.AutomaticSize = Enum.AutomaticSize.Y
+	card.BackgroundColor3 = Color3.fromRGB(19, 19, 23) card.BorderSizePixel = 0
+	card.LayoutOrder = order card.Parent = scroll
+	Instance.new("UICorner", card).CornerRadius = UDim.new(0, 10)
+	local cs = Instance.new("UIStroke", card) cs.Color = Color3.fromRGB(30, 30, 37) cs.Thickness = 1
+	Instance.new("UIListLayout", card).SortOrder = Enum.SortOrder.LayoutOrder
+	local cp = Instance.new("UIPadding", card)
+	cp.PaddingTop = UDim.new(0, 11) cp.PaddingBottom = UDim.new(0, 11)
+	cp.PaddingLeft = UDim.new(0, 13) cp.PaddingRight = UDim.new(0, 13)
+	return card
+end
+
+local function makeCardHeader(parent, order, icon, title, iconIsImage)
+	local row = Instance.new("Frame") row.Size = UDim2.new(1, 0, 0, 18) row.BackgroundTransparency = 1 row.LayoutOrder = order row.Parent = parent
+	if iconIsImage then
+		local img = Instance.new("ImageLabel") img.Size = UDim2.new(0, 14, 0, 14) img.Position = UDim2.new(0, 0, 0.5, -7) img.BackgroundTransparency = 1 img.Image = "rbxassetid://" .. tostring(icon) img.ScaleType = Enum.ScaleType.Fit img.Parent = row
+	else
+		local iL = Instance.new("TextLabel") iL.Size = UDim2.new(0, 14, 1, 0) iL.BackgroundTransparency = 1 iL.Text = icon iL.TextSize = 11 iL.Font = Enum.Font.GothamBold iL.TextColor3 = Color3.fromRGB(25, 190, 75) iL.TextXAlignment = Enum.TextXAlignment.Center iL.TextYAlignment = Enum.TextYAlignment.Center iL.Parent = row
+	end
+	local tL = Instance.new("TextLabel") tL.Size = UDim2.new(1, -18, 1, 0) tL.Position = UDim2.new(0, 20, 0, 0) tL.BackgroundTransparency = 1 tL.Text = title tL.TextColor3 = Color3.fromRGB(205, 205, 215) tL.TextSize = 12 tL.Font = Enum.Font.GothamBold tL.TextXAlignment = Enum.TextXAlignment.Left tL.TextYAlignment = Enum.TextYAlignment.Center tL.Parent = row
+	return row
+end
+
+local function makeCardHeaderWithScan(parent, order, icon, title, iconIsImage)
+	local row = makeCardHeader(parent, order, icon, title, iconIsImage)
+	local tL = row:FindFirstChildOfClass("TextLabel") if tL then tL.Size = UDim2.new(1, -130, 1, 0) end
+	local scanLbl = Instance.new("TextLabel") scanLbl.Size = UDim2.new(0, 110, 1, 0) scanLbl.Position = UDim2.new(1, -110, 0, 0) scanLbl.BackgroundTransparency = 1 scanLbl.Text = "Last scan: never" scanLbl.TextColor3 = Color3.fromRGB(48, 48, 60) scanLbl.TextSize = 8 scanLbl.Font = Enum.Font.Gotham scanLbl.TextXAlignment = Enum.TextXAlignment.Right scanLbl.TextYAlignment = Enum.TextYAlignment.Center scanLbl.Parent = row
+	return row, scanLbl
+end
+
+local function makeSpacer(parent, order, h)
+	local s = Instance.new("Frame") s.Size = UDim2.new(1, 0, 0, h) s.BackgroundTransparency = 1 s.LayoutOrder = order s.Parent = parent
+end
+
+local function makeDivider(parent, order)
+	local d = Instance.new("Frame") d.Size = UDim2.new(1, 0, 0, 1) d.BackgroundColor3 = Color3.fromRGB(28, 28, 36) d.BorderSizePixel = 0 d.LayoutOrder = order d.Parent = parent
+end
+
+-- ══ AVATAR CARD ══
+local avCard = makeCard(1)
+local avRow = Instance.new("Frame") avRow.Size = UDim2.new(1, 0, 0, 58) avRow.BackgroundTransparency = 1 avRow.LayoutOrder = 1 avRow.Parent = avCard
+
+local avatarRing = Instance.new("Frame") avatarRing.Size = UDim2.new(0, 48, 0, 48) avatarRing.Position = UDim2.new(0, 0, 0.5, -24) avatarRing.BackgroundColor3 = Color3.fromRGB(20, 20, 24) avatarRing.BorderSizePixel = 0 avatarRing.Parent = avRow
+Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
+local avatarStroke = Instance.new("UIStroke", avatarRing) avatarStroke.Color = Color3.fromRGB(55, 55, 70) avatarStroke.Thickness = 2.5
+local avatarImg = Instance.new("ImageLabel") avatarImg.Size = UDim2.new(1, 0, 1, 0) avatarImg.BackgroundTransparency = 1 avatarImg.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png" avatarImg.ScaleType = Enum.ScaleType.Crop avatarImg.Parent = avatarRing
+Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
+
+local statusDot = Instance.new("Frame") statusDot.Size = UDim2.new(0, 13, 0, 13) statusDot.Position = UDim2.new(0, 34, 0, 39) statusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70) statusDot.BorderSizePixel = 0 statusDot.ZIndex = 3 statusDot.Parent = avRow
+Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
+local dotOutline = Instance.new("UIStroke", statusDot) dotOutline.Color = Color3.fromRGB(19, 19, 23) dotOutline.Thickness = 2.5
+
+local displayLbl = Instance.new("TextLabel") displayLbl.Size = UDim2.new(1, -58, 0, 16) displayLbl.Position = UDim2.new(0, 58, 0, 3) displayLbl.BackgroundTransparency = 1 displayLbl.Text = player.DisplayName displayLbl.TextColor3 = Color3.fromRGB(240, 240, 245) displayLbl.TextSize = 14 displayLbl.Font = Enum.Font.GothamBold displayLbl.TextXAlignment = Enum.TextXAlignment.Left displayLbl.Parent = avRow
+
+local tagLbl = Instance.new("TextLabel") tagLbl.Size = UDim2.new(1, -58, 0, 12) tagLbl.Position = UDim2.new(0, 58, 0, 20) tagLbl.BackgroundTransparency = 1 tagLbl.Text = "@" .. player.Name tagLbl.TextColor3 = Color3.fromRGB(58, 58, 76) tagLbl.TextSize = 10 tagLbl.Font = Enum.Font.Gotham tagLbl.TextXAlignment = Enum.TextXAlignment.Left tagLbl.Parent = avRow
+
+local paidLbl = Instance.new("TextLabel") paidLbl.Size = UDim2.new(1, -58, 0, 12) paidLbl.Position = UDim2.new(0, 58, 0, 32) paidLbl.BackgroundTransparency = 1 paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75) paidLbl.TextSize = 10 paidLbl.Font = Enum.Font.GothamBold paidLbl.TextXAlignment = Enum.TextXAlignment.Left paidLbl.Parent = avRow
+
+local statusTxt = Instance.new("TextLabel") statusTxt.Size = UDim2.new(1, -58, 0, 12) statusTxt.Position = UDim2.new(0, 58, 0, 44) statusTxt.BackgroundTransparency = 1 statusTxt.Text = "Idle — waiting to start" statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76) statusTxt.TextSize = 10 statusTxt.Font = Enum.Font.Gotham statusTxt.TextXAlignment = Enum.TextXAlignment.Left statusTxt.TextTruncate = Enum.TextTruncate.AtEnd statusTxt.Parent = avRow
+
+local currentStatusState = "idle"
+local function UpdatePlayerStatus(state, statusText)
+	if state ~= currentStatusState then
+		currentStatusState = state
+		local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		if state == "active" then
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(25, 190, 75)}):Play()
+			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(25, 190, 75)}):Play()
+			statusTxt.TextColor3 = Color3.fromRGB(25, 190, 75)
+			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		elseif state == "paused" then
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
+			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
+			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
+			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		elseif state == "idle" then
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
+			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
+			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
+			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		elseif state == "error" then
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(210, 55, 55)}):Play()
+			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(210, 55, 55)}):Play()
+			statusTxt.TextColor3 = Color3.fromRGB(210, 55, 55)
+		end
+	end
+	statusTxt.Text = statusText or (state == "active" and "Autofarming") or (state == "paused" and "Paused") or (state == "idle" and "Idle — waiting to start") or (state == "error" and "Error occurred") or "Unknown"
+end
+
+local function onCharacterAdded(newChar)
+	character = newChar
+	humanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
+	humanoid = newChar:WaitForChild("Humanoid")
+	isPickingUp = false lastATMCFrame = nil activeATM = nil activeATMPos = nil
+	currentAction = "Respawned — resuming..."
+	humanoid.PlatformStand = false
+	if not getgenv().ATM_RUNNING then
+		UpdatePlayerStatus(getgenv().ATM_STARTED and "paused" or "idle")
+	end
+end
+player.CharacterAdded:Connect(onCharacterAdded)
+
+-- ══ DETECTION CARDS ══
+local detCard = makeCard(2)
+local _, detScanLbl = makeCardHeaderWithScan(detCard, 1, 98439685495165, "Live Detection", true)
+makeSpacer(detCard, 2, 6)
+local detGrid = Instance.new("Frame") detGrid.Size = UDim2.new(1, 0, 0, 62) detGrid.BackgroundTransparency = 1 detGrid.LayoutOrder = 3 detGrid.Parent = detCard
+local detGL = Instance.new("UIListLayout", detGrid) detGL.FillDirection = Enum.FillDirection.Horizontal detGL.Padding = UDim.new(0, 7)
+
+local function makeDetBox(parent, layoutOrder, bg, iconAsset, labelText, valColor)
+	local box = Instance.new("Frame") box.Size = UDim2.new(0.5, -4, 1, 0) box.BackgroundColor3 = bg box.BorderSizePixel = 0 box.LayoutOrder = layoutOrder box.Parent = parent
+	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+	local iconBg = Instance.new("Frame") iconBg.Size = UDim2.new(0, 32, 0, 32) iconBg.Position = UDim2.new(0, 7, 0, 14)
+	iconBg.BackgroundColor3 = Color3.fromRGB(math.clamp(math.floor(valColor.R*255*0.18),0,255), math.clamp(math.floor(valColor.G*255*0.18),0,255), math.clamp(math.floor(valColor.B*255*0.18),0,255))
+	iconBg.BorderSizePixel = 0 iconBg.Parent = box
+	Instance.new("UICorner", iconBg).CornerRadius = UDim.new(0, 6)
+	local iconImg = Instance.new("ImageLabel") iconImg.Size = UDim2.new(0, 19, 0, 19) iconImg.Position = UDim2.new(0.5, -10, 0.5, -10) iconImg.BackgroundTransparency = 1 iconImg.Image = "rbxassetid://" .. tostring(iconAsset) iconImg.ScaleType = Enum.ScaleType.Fit iconImg.ImageColor3 = valColor iconImg.Parent = iconBg
+	local vL = Instance.new("TextLabel") vL.Size = UDim2.new(1, -46, 0, 22) vL.Position = UDim2.new(0, 42, 0, 10) vL.BackgroundTransparency = 1 vL.Text = "0" vL.TextColor3 = valColor vL.TextSize = 20 vL.Font = Enum.Font.GothamBold vL.TextXAlignment = Enum.TextXAlignment.Left vL.TextYAlignment = Enum.TextYAlignment.Center vL.Parent = box
+	local nL = Instance.new("TextLabel") nL.Size = UDim2.new(1, -46, 0, 12) nL.Position = UDim2.new(0, 42, 0, 34) nL.BackgroundTransparency = 1 nL.Text = labelText nL.TextColor3 = valColor nL.TextSize = 9 nL.Font = Enum.Font.Gotham nL.TextXAlignment = Enum.TextXAlignment.Left nL.TextYAlignment = Enum.TextYAlignment.Center nL.Parent = box
+	return vL
+end
+
+local atmAvailVal  = makeDetBox(detGrid, 1, Color3.fromRGB(13,30,15), 83562019198470, "ATMs Available", Color3.fromRGB(25,190,75))
+local atmBrokenVal = makeDetBox(detGrid, 2, Color3.fromRGB(30,13,13), 88329562081184, "ATMs Broken",    Color3.fromRGB(210,55,55))
+
+local vaultCard = makeCard(3)
+local _, vaultScanLbl = makeCardHeaderWithScan(vaultCard, 1, 88774952696393, "Live Vault Detection", true)
+makeSpacer(vaultCard, 2, 6)
+local vaultGrid = Instance.new("Frame") vaultGrid.Size = UDim2.new(1, 0, 0, 62) vaultGrid.BackgroundTransparency = 1 vaultGrid.LayoutOrder = 3 vaultGrid.Parent = vaultCard
+local vGL = Instance.new("UIListLayout", vaultGrid) vGL.FillDirection = Enum.FillDirection.Horizontal vGL.Padding = UDim.new(0, 7)
+local vaultOpenVal   = makeDetBox(vaultGrid, 1, Color3.fromRGB(13,30,15), 94851890970090, "Vaults Open",   Color3.fromRGB(25,190,75))
+local vaultClosedVal = makeDetBox(vaultGrid, 2, Color3.fromRGB(30,13,13), 77505460123202, "Vaults Closed", Color3.fromRGB(210,55,55))
+
+-- ══ AUTOMATION CARD ══
+local autoCard = makeCard(4)
+makeCardHeader(autoCard, 1, 121618404766337, "Automation", true)
+makeSpacer(autoCard, 2, 9)
+
+local function makeToggleRow(parent, order, title, subtitle, enableText)
+	local wrap = Instance.new("Frame") wrap.Size = UDim2.new(1, 0, 0, 60) wrap.BackgroundTransparency = 1 wrap.LayoutOrder = order wrap.Parent = parent
+	local titleL = Instance.new("TextLabel") titleL.Size = UDim2.new(1, 0, 0, 16) titleL.BackgroundTransparency = 1 titleL.Text = title titleL.TextColor3 = Color3.fromRGB(210, 210, 220) titleL.TextSize = 12 titleL.Font = Enum.Font.GothamBold titleL.TextXAlignment = Enum.TextXAlignment.Left titleL.Parent = wrap
+	local subL = Instance.new("TextLabel") subL.Size = UDim2.new(1, 0, 0, 12) subL.Position = UDim2.new(0, 0, 0, 18) subL.BackgroundTransparency = 1 subL.Text = subtitle subL.TextColor3 = Color3.fromRGB(58, 58, 75) subL.TextSize = 9 subL.Font = Enum.Font.Gotham subL.TextXAlignment = Enum.TextXAlignment.Left subL.Parent = wrap
+	local track = Instance.new("TextButton") track.Size = UDim2.new(0, 42, 0, 22) track.Position = UDim2.new(0, 0, 0, 34) track.BackgroundColor3 = Color3.fromRGB(30, 30, 42) track.Text = "" track.BorderSizePixel = 0 track.Parent = wrap
+	Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+	local thumb = Instance.new("Frame") thumb.Size = UDim2.new(0, 16, 0, 16) thumb.Position = UDim2.new(0, 3, 0.5, -8) thumb.BackgroundColor3 = Color3.fromRGB(82, 82, 105) thumb.BorderSizePixel = 0 thumb.Parent = track
+	Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
+	local togLbl = Instance.new("TextLabel") togLbl.Size = UDim2.new(1, -50, 0, 22) togLbl.Position = UDim2.new(0, 50, 0, 34) togLbl.BackgroundTransparency = 1 togLbl.Text = enableText togLbl.TextColor3 = Color3.fromRGB(82, 82, 105) togLbl.TextSize = 10 togLbl.Font = Enum.Font.Gotham togLbl.TextXAlignment = Enum.TextXAlignment.Left togLbl.TextYAlignment = Enum.TextYAlignment.Center togLbl.Parent = wrap
+	return track, thumb, subL, togLbl
+end
+
+local radTrack, radThumb, radSubLbl, radTogLbl = makeToggleRow(autoCard, 3, "ATM Money Drop Radius", "Scan " .. ATM_RADIUS .. " studs around active ATM — OFF", "Enable Radius Scan")
+makeSpacer(autoCard, 4, 3) makeDivider(autoCard, 5) makeSpacer(autoCard, 6, 3)
+
+local fbTrack, fbThumb, fbSubLbl, fbTogLbl = makeToggleRow(autoCard, 7, "Fast Break ATM", "Use knife for instant break — OFF", "Enable Fast Break")
+makeSpacer(autoCard, 8, 3) makeDivider(autoCard, 9) makeSpacer(autoCard, 10, 3)
+
+local hfTrack, hfThumb, hfSubLbl, hfTogLbl = makeToggleRow(autoCard, 11,
+	"Hidden Farm Mode",
+	"Farm from underneath the ATM — OFF",
+	"Enable Hidden Farm Mode")
+
+local function animateToggle(track, thumb, on)
+	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	if on then
+		TweenService:Create(track, ti, {BackgroundColor3 = Color3.fromRGB(22, 160, 60)}):Play()
+		TweenService:Create(thumb, ti, {Position = UDim2.new(1, -19, 0.5, -8), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+	else
+		TweenService:Create(track, ti, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
+		TweenService:Create(thumb, ti, {Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = Color3.fromRGB(82, 82, 105)}):Play()
+	end
+end
+
+local function setRadiusToggle(on)
+	getgenv().RADIUS_ENABLED = on animateToggle(radTrack, radThumb, on)
+	radSubLbl.Text = "Scan " .. ATM_RADIUS .. " studs around active ATM — " .. (on and "ON" or "OFF")
+	radSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
+	radTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
+end
+
+local function setFastBreakToggle(on)
+	getgenv().FAST_BREAK = on animateToggle(fbTrack, fbThumb, on)
+	fbSubLbl.Text = "Use knife for instant break — " .. (on and "ON" or "OFF")
+	fbSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
+	fbTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
+end
+
+local function setHiddenFarmToggle(on)
+	getgenv().HIDDEN_FARM = on animateToggle(hfTrack, hfThumb, on)
+	hfSubLbl.Text = "Farm from underneath the ATM — " .. (on and "ON" or "OFF")
+	hfSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
+	hfTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
+	if not on then
+		clearHiddenFailed()
+		local h = getHum() if h then h.PlatformStand = false end
+	end
+end
+
+radTrack.MouseButton1Click:Connect(function() setRadiusToggle(not getgenv().RADIUS_ENABLED) end)
+fbTrack.MouseButton1Click:Connect(function() setFastBreakToggle(not getgenv().FAST_BREAK) end)
+hfTrack.MouseButton1Click:Connect(function() setHiddenFarmToggle(not getgenv().HIDDEN_FARM) end)
+
+-- ══ STATS CARD ══
+local statsCard = makeCard(5)
+makeCardHeader(statsCard, 1, 92424302331652, "Stats", true)
+makeSpacer(statsCard, 2, 9)
+
+local earnCell = Instance.new("Frame") earnCell.Size = UDim2.new(1, 0, 0, 44) earnCell.BackgroundColor3 = Color3.fromRGB(14,14,18) earnCell.BorderSizePixel = 0 earnCell.LayoutOrder = 3 earnCell.Parent = statsCard
+Instance.new("UICorner", earnCell).CornerRadius = UDim.new(0, 7)
+Instance.new("UIStroke", earnCell).Color = Color3.fromRGB(26, 26, 33)
+
+local earnLblT = Instance.new("TextLabel") earnLblT.Size = UDim2.new(0.5, 0, 0, 11) earnLblT.Position = UDim2.new(0, 7, 0, 5) earnLblT.BackgroundTransparency = 1 earnLblT.Text = "Total Earned" earnLblT.TextColor3 = Color3.fromRGB(58,58,76) earnLblT.TextSize = 9 earnLblT.Font = Enum.Font.Gotham earnLblT.TextXAlignment = Enum.TextXAlignment.Left earnLblT.Parent = earnCell
+local earningsBig = Instance.new("TextLabel") earningsBig.Size = UDim2.new(0.5, 0, 0, 20) earningsBig.Position = UDim2.new(0, 7, 0, 18) earningsBig.BackgroundTransparency = 1 earningsBig.Text = "$0" earningsBig.TextColor3 = Color3.fromRGB(25,190,75) earningsBig.TextSize = 15 earningsBig.Font = Enum.Font.GothamBold earningsBig.TextXAlignment = Enum.TextXAlignment.Left earningsBig.Parent = earnCell
+local runtimeLbl = Instance.new("TextLabel") runtimeLbl.Size = UDim2.new(0.5, -7, 0, 11) runtimeLbl.Position = UDim2.new(0.5, 0, 0, 5) runtimeLbl.BackgroundTransparency = 1 runtimeLbl.Text = "Not started" runtimeLbl.TextColor3 = Color3.fromRGB(58,58,76) runtimeLbl.TextSize = 9 runtimeLbl.Font = Enum.Font.Gotham runtimeLbl.TextXAlignment = Enum.TextXAlignment.Right runtimeLbl.Parent = earnCell
+local earnRateLbl = Instance.new("TextLabel") earnRateLbl.Size = UDim2.new(0.5, -7, 0, 20) earnRateLbl.Position = UDim2.new(0.5, 0, 0, 18) earnRateLbl.BackgroundTransparency = 1 earnRateLbl.Text = "$0/min" earnRateLbl.TextColor3 = Color3.fromRGB(58,58,76) earnRateLbl.TextSize = 11 earnRateLbl.Font = Enum.Font.GothamBold earnRateLbl.TextXAlignment = Enum.TextXAlignment.Right earnRateLbl.Parent = earnCell
+
+makeSpacer(statsCard, 4, 6)
+local statsGrid = Instance.new("Frame") statsGrid.Size = UDim2.new(1, 0, 0, 74) statsGrid.BackgroundTransparency = 1 statsGrid.LayoutOrder = 5 statsGrid.Parent = statsCard
+local sGL = Instance.new("UIGridLayout", statsGrid) sGL.CellSize = UDim2.new(0.5, -4, 0, 34) sGL.CellPadding = UDim2.new(0, 6, 0, 6) sGL.SortOrder = Enum.SortOrder.LayoutOrder sGL.FillDirectionMaxCells = 2
+
+local function makeStatCell(order, label)
+	local cell = Instance.new("Frame") cell.BackgroundColor3 = Color3.fromRGB(14,14,18) cell.BorderSizePixel = 0 cell.LayoutOrder = order cell.Parent = statsGrid
+	Instance.new("UICorner", cell).CornerRadius = UDim.new(0, 6) Instance.new("UIStroke", cell).Color = Color3.fromRGB(26, 26, 33)
+	local lL = Instance.new("TextLabel") lL.Size = UDim2.new(1,-8,0,10) lL.Position = UDim2.new(0,5,0,4) lL.BackgroundTransparency = 1 lL.Text = label lL.TextColor3 = Color3.fromRGB(58,58,76) lL.TextSize = 8 lL.Font = Enum.Font.Gotham lL.TextXAlignment = Enum.TextXAlignment.Left lL.Parent = cell
+	local vL = Instance.new("TextLabel") vL.Size = UDim2.new(1,-8,0,16) vL.Position = UDim2.new(0,5,0,15) vL.BackgroundTransparency = 1 vL.Text = "0" vL.TextColor3 = Color3.fromRGB(210,210,222) vL.TextSize = 13 vL.Font = Enum.Font.GothamBold vL.TextXAlignment = Enum.TextXAlignment.Left vL.Parent = cell
+	return vL
+end
+
+local punchVal    = makeStatCell(1, "Total Punches")
+local dropsVal    = makeStatCell(2, "Drops Collected")
+local skippedVal  = makeStatCell(3, "ATMs Skipped")
+local earnRateVal = makeStatCell(4, "Earn Rate")
+earnRateVal.TextColor3 = Color3.fromRGB(25, 190, 75)
+
+local actionCard = makeCard(6)
+makeCardHeader(actionCard, 1, "▶", "Current Action")
+makeSpacer(actionCard, 2, 5)
+local actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 13) actionLbl.BackgroundTransparency = 1 actionLbl.Text = "Press Start to begin farming." actionLbl.TextColor3 = Color3.fromRGB(88,88,112) actionLbl.TextSize = 10 actionLbl.Font = Enum.Font.Gotham actionLbl.TextXAlignment = Enum.TextXAlignment.Left actionLbl.TextTruncate = Enum.TextTruncate.AtEnd actionLbl.LayoutOrder = 3 actionLbl.Parent = actionCard
+
+local btnWrap = Instance.new("Frame") btnWrap.Size = UDim2.new(1, 0, 0, 44) btnWrap.BackgroundTransparency = 1 btnWrap.LayoutOrder = 7 btnWrap.Parent = scroll
+local toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
+
+-- ══ SHOP WINDOW ══
+local shopWindow = Instance.new("Frame") shopWindow.Size = UDim2.new(0,265,0,330) shopWindow.Position = UDim2.new(0,410,0.5,-165) shopWindow.BackgroundColor3 = Color3.fromRGB(12,12,14) shopWindow.BorderSizePixel = 0 shopWindow.Active = true shopWindow.Draggable = true shopWindow.Visible = false shopWindow.Parent = gui
+Instance.new("UICorner", shopWindow).CornerRadius = UDim.new(0, 14) Instance.new("UIStroke", shopWindow).Color = Color3.fromRGB(32,32,38)
+local sWH = Instance.new("Frame") sWH.Size = UDim2.new(1,0,0,46) sWH.BackgroundColor3 = Color3.fromRGB(16,16,19) sWH.BorderSizePixel = 0 sWH.Parent = shopWindow
+Instance.new("UICorner", sWH).CornerRadius = UDim.new(0, 14)
+local sWHfix = Instance.new("Frame") sWHfix.Size = UDim2.new(1,0,0.5,0) sWHfix.Position = UDim2.new(0,0,0.5,0) sWHfix.BackgroundColor3 = Color3.fromRGB(16,16,19) sWHfix.BorderSizePixel = 0 sWHfix.Parent = sWH
+local sWIcon = Instance.new("ImageLabel") sWIcon.Size = UDim2.new(0,14,0,14) sWIcon.Position = UDim2.new(0,12,0.5,-7) sWIcon.BackgroundTransparency = 1 sWIcon.Image = "rbxassetid://127805931579487" sWIcon.ImageColor3 = Color3.fromRGB(130,130,148) sWIcon.ScaleType = Enum.ScaleType.Fit sWIcon.Parent = sWH
+local sWT = Instance.new("TextLabel") sWT.Size = UDim2.new(1,-80,1,0) sWT.Position = UDim2.new(0,32,0,0) sWT.BackgroundTransparency = 1 sWT.Text = "Shop" sWT.TextColor3 = Color3.fromRGB(220,220,230) sWT.TextSize = 14 sWT.Font = Enum.Font.GothamBold sWT.TextXAlignment = Enum.TextXAlignment.Left sWT.TextYAlignment = Enum.TextYAlignment.Center sWT.Parent = sWH
+local sWC = Instance.new("TextButton") sWC.Size = UDim2.new(0,26,0,26) sWC.Position = UDim2.new(1,-36,0.5,-13) sWC.BackgroundColor3 = Color3.fromRGB(22,22,28) sWC.Text = "x" sWC.TextColor3 = Color3.fromRGB(148,148,162) sWC.TextSize = 12 sWC.Font = Enum.Font.GothamBold sWC.BorderSizePixel = 0 sWC.Parent = sWH
+Instance.new("UICorner", sWC).CornerRadius = UDim.new(0, 7) Instance.new("UIStroke", sWC).Color = Color3.fromRGB(34,34,44)
+sWC.MouseButton1Click:Connect(function() shopWindow.Visible = false end)
+shopOpenBtn.MouseButton1Click:Connect(function() shopWindow.Visible = not shopWindow.Visible end)
+
+local shopStatusLbl = Instance.new("TextLabel") shopStatusLbl.Size = UDim2.new(1,-20,0,12) shopStatusLbl.Position = UDim2.new(0,10,0,50) shopStatusLbl.BackgroundTransparency = 1 shopStatusLbl.Text = "Select an item to purchase" shopStatusLbl.TextColor3 = Color3.fromRGB(64,64,82) shopStatusLbl.TextSize = 9 shopStatusLbl.Font = Enum.Font.Gotham shopStatusLbl.TextXAlignment = Enum.TextXAlignment.Left shopStatusLbl.Parent = shopWindow
+
+local function makeShopRow(yPos, icon, label, price, btnColor)
+	local row = Instance.new("Frame") row.Size = UDim2.new(1,-20,0,50) row.Position = UDim2.new(0,10,0,yPos) row.BackgroundColor3 = Color3.fromRGB(19,19,23) row.BorderSizePixel = 0 row.Parent = shopWindow
+	Instance.new("UICorner", row).CornerRadius = UDim.new(0, 9) Instance.new("UIStroke", row).Color = Color3.fromRGB(30,30,37)
+	local iL = Instance.new("TextLabel") iL.Size = UDim2.new(0,26,0,26) iL.Position = UDim2.new(0,8,0.5,-13) iL.BackgroundTransparency = 1 iL.Text = icon iL.TextSize = 17 iL.Font = Enum.Font.GothamBold iL.TextXAlignment = Enum.TextXAlignment.Center iL.TextYAlignment = Enum.TextYAlignment.Center iL.Parent = row
+	local nL = Instance.new("TextLabel") nL.Size = UDim2.new(1,-110,0,16) nL.Position = UDim2.new(0,40,0,9) nL.BackgroundTransparency = 1 nL.Text = label nL.TextColor3 = Color3.fromRGB(210,210,222) nL.TextSize = 12 nL.Font = Enum.Font.GothamBold nL.TextXAlignment = Enum.TextXAlignment.Left nL.Parent = row
+	local pL = Instance.new("TextLabel") pL.Size = UDim2.new(1,-110,0,11) pL.Position = UDim2.new(0,40,0,27) pL.BackgroundTransparency = 1 pL.Text = price pL.TextColor3 = Color3.fromRGB(64,64,82) pL.TextSize = 9 pL.Font = Enum.Font.Gotham pL.TextXAlignment = Enum.TextXAlignment.Left pL.Parent = row
+	local btn = Instance.new("TextButton") btn.Size = UDim2.new(0,50,0,28) btn.Position = UDim2.new(1,-58,0.5,-14) btn.BackgroundColor3 = btnColor btn.Text = "BUY" btn.TextColor3 = Color3.fromRGB(255,255,255) btn.TextSize = 11 btn.Font = Enum.Font.GothamBold btn.BorderSizePixel = 0 btn.Parent = row
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 7)
+	return btn
+end
+
+local rpgBtn       = makeShopRow(66,  "🚀", "RPG",               "$22,510", Color3.fromRGB(170,36,36))
+local rpgAmmoBtn   = makeShopRow(122, "🔋", "RPG Ammo",          "$1,126",  Color3.fromRGB(115,42,160))
+local flameBtn     = makeShopRow(178, "🔥", "Flamethrower",      "$10,130", Color3.fromRGB(165,82,10))
+local flameAmmoBtn = makeShopRow(234, "⚡", "Flamethrower Ammo", "$1,126",  Color3.fromRGB(16,90,155))
+
+local SHOP_ITEMS = {
+	[rpgBtn]       = {name = "[RPG] - $22510",                  label = "RPG"},
+	[rpgAmmoBtn]   = {name = "5 [RPG Ammo] - $1126",            label = "RPG Ammo"},
+	[flameBtn]     = {name = "[Flamethrower] - $10130",         label = "Flamethrower"},
+	[flameAmmoBtn] = {name = "140 [Flamethrower Ammo] - $1126", label = "Flamethrower Ammo"},
+}
+
+local shopBusy = false
+local function buyItem(btn, itemName, label)
+	if shopBusy then return end shopBusy = true
+	local hrp = getHRP()
+	if not hrp then shopStatusLbl.Text = "No character found!" shopStatusLbl.TextColor3 = Color3.fromRGB(210,55,55) shopBusy = false return end
+	local orig, origCol = btn.Text, btn.BackgroundColor3
+	btn.Text = "..." btn.BackgroundColor3 = Color3.fromRGB(42,42,52)
+	local tpCF = SHOP_LOCATIONS[itemName]
+	if not tpCF then shopStatusLbl.Text = "No location for " .. label shopStatusLbl.TextColor3 = Color3.fromRGB(210,55,55) btn.Text = orig btn.BackgroundColor3 = origCol shopBusy = false return end
+	shopStatusLbl.Text = "Teleporting to " .. label .. "..." shopStatusLbl.TextColor3 = Color3.fromRGB(175,138,38)
+	pcall(function() hrp.CFrame = tpCF end) task.wait(0.5)
+	local shopFolder = workspace:FindFirstChild("Ignored") and workspace.Ignored:FindFirstChild("Shop")
+	if not shopFolder then shopStatusLbl.Text = "Shop folder not found!" shopStatusLbl.TextColor3 = Color3.fromRGB(210,55,55) btn.Text = orig btn.BackgroundColor3 = origCol shopBusy = false return end
+	local shopItem = shopFolder:FindFirstChild(itemName)
+	if not shopItem then shopStatusLbl.Text = label .. " not found!" shopStatusLbl.TextColor3 = Color3.fromRGB(210,55,55) btn.Text = orig btn.BackgroundColor3 = origCol shopBusy = false return end
+	local cd = shopItem:FindFirstChildOfClass("ClickDetector")
+	if not cd then shopStatusLbl.Text = "ClickDetector missing!" shopStatusLbl.TextColor3 = Color3.fromRGB(210,55,55) btn.Text = orig btn.BackgroundColor3 = origCol shopBusy = false return end
+	shopStatusLbl.Text = "Purchasing " .. label .. "..." shopStatusLbl.TextColor3 = Color3.fromRGB(175,138,38)
+	fireclickdetector(cd, 0, "MouseClick") task.wait(0.35)
+	shopStatusLbl.Text = "✓  " .. label .. " purchased!" shopStatusLbl.TextColor3 = Color3.fromRGB(25,190,75)
+	btn.Text = "✓" btn.BackgroundColor3 = Color3.fromRGB(20,120,48)
+	task.wait(2) shopStatusLbl.Text = "Select an item to purchase" shopStatusLbl.TextColor3 = Color3.fromRGB(64,64,82)
+	btn.Text = orig btn.BackgroundColor3 = origCol shopBusy = false
+end
+for btn, data in pairs(SHOP_ITEMS) do
+	local cb, cd2 = btn, data
+	cb.MouseButton1Click:Connect(function() task.spawn(function() buyItem(cb, cd2.name, cd2.label) end) end)
+end
+
+-- ══ LIVE SCANNER ══
+task.spawn(function()
+	while true do
+		local cashierList = CashierFolder and CashierFolder:GetChildren() or {}
+		local avail, broken = 0, 0
+		for _, cg in ipairs(cashierList) do
+			if isCashierOpen(cg) then avail += 1 if visited[cg] then visited[cg] = nil end
+			else broken += 1 end
+		end
+		atmAvailVal.Text = tostring(avail) atmBrokenVal.Text = tostring(broken)
+		detScanLbl.Text = "Last scan: " .. os.date("%H:%M:%S")
+		local vaults = findVaults()
+		local openV, closedV = 0, 0
+		for _, v in ipairs(vaults) do if isVaultOpen(v) then openV += 1 else closedV += 1 end end
+		vaultOpenVal.Text = tostring(openV) vaultClosedVal.Text = tostring(closedV)
+		vaultScanLbl.Text = "Last scan: " .. os.date("%H:%M:%S")
+		task.wait(5)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		task.wait(RADIUS_SCAN_INTERVAL)
+		if not getgenv().RADIUS_ENABLED then continue end
+		if not activeATM or not activeATMPos then continue end
+		if isPickingUp or not DropFolder then continue end
+		local char = player.Character if not char then continue end
+		local hrp = char:FindFirstChild("HumanoidRootPart") if not hrp then continue end
+		local currentATMPos = activeATMPos if not currentATMPos then continue end
+		local toPickup = {}
+		for _, drop in ipairs(DropFolder:GetChildren()) do
+			if drop.Name ~= "MoneyDrop" or not drop.Parent then continue end
+			local dropPos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
+			if not dropPos then continue end
+			if (currentATMPos - dropPos).Magnitude <= ATM_RADIUS then
+				table.insert(toPickup, {drop = drop, dist = (currentATMPos - dropPos).Magnitude})
+			end
+		end
+		if #toPickup == 0 then continue end
+		table.sort(toPickup, function(a, b) return a.dist < b.dist end)
+		isPickingUp = true
+		for _, entry in ipairs(toPickup) do
+			if not activeATMPos then break end
+			if not entry.drop.Parent then continue end
+			local dv = getDropValue(entry.drop)
+			local pos = entry.drop:IsA("BasePart") and entry.drop.Position or (entry.drop.PrimaryPart and entry.drop.PrimaryPart.Position)
+			if not pos then continue end
+			local cHRP = getHRP() if not cHRP then continue end
+			pcall(function() cHRP.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
+			task.wait(0.05)
+			if not entry.drop.Parent then continue end
+			local cd3 = entry.drop:FindFirstChildOfClass("ClickDetector")
+			if cd3 then fireclickdetector(cd3, 0, "MouseClick")
+			else firetouchinterest(cHRP, entry.drop, true) task.wait(0.02) firetouchinterest(cHRP, entry.drop, false) end
+			if dv > 0 then totalEarned += dv end
+			dropsCollected += 1
+			task.wait(0.05)
+		end
+		local fHRP = getHRP()
+		if lastATMCFrame and fHRP then pcall(function() fHRP.CFrame = lastATMCFrame end) end
+		isPickingUp = false
+	end
+end)
+
+local function watchDropFolder()
+	if not DropFolder then return end
+	DropFolder.ChildAdded:Connect(function(drop)
+		if not getgenv().ATM_RUNNING then return end
+		if drop.Name ~= "MoneyDrop" then return end
+		task.wait(0.03)
+		if not drop.Parent then return end
+		local pos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
+		if not pos then return end
+		local hrp = getHRP() if not hrp then return end
+		if (hrp.Position - pos).Magnitude > MAX_DROP_DISTANCE then return end
+		if not isPickingUp then
+			if lastATMCFrame then safeTeleport(lastATMCFrame) task.wait(0.03) end
+			pickupDrop(drop)
+		end
+	end)
+end
+
+-- Periodically purge the pickedUpDrops table of drops that no longer exist in workspace.
+-- Keeps memory clean — without this the table would grow forever as drops are collected.
+task.spawn(function()
+	while true do
+		task.wait(15)
+		for drop in pairs(pickedUpDrops) do
+			if not drop.Parent then
+				pickedUpDrops[drop] = nil
+			end
+		end
+	end
+end)
+
+local function isRunning() return getgenv().ATM_RUNNING == true end
+local function getCombatTool()
+	local char = player.Character if not char then return nil end
+	return char:FindFirstChild("Combat") or player.Backpack:FindFirstChild("Combat")
+end
+
+local function heavyPunch(atmHumanoid)
+	if not isRunning() then return false, 0 end
+	local char = player.Character if not char then return false, 0 end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false, 0 end
+	local combat = getCombatTool() if not combat then return false, 0 end
+	local hpBefore = atmHumanoid and atmHumanoid.Health or 0
+	hum:EquipTool(combat)
+	task.wait(HEAVY_PUNCH_WINDUP)
+	if not isRunning() then return false, 0 end
+	combat:Activate()
+	task.wait(HEAVY_PUNCH_HOLD) task.wait(HEAVY_PUNCH_COOLDOWN)
+	local hpAfter = atmHumanoid and atmHumanoid.Health or 0
+	punchCount += 1
+	return true, hpBefore - hpAfter
+end
+
+local function disableFastBreak() setFastBreakToggle(false) end
+
+local function doKnifeSwings(atmHumanoid)
+	if not ensureKnife() then currentAction = "Knife not found — falling back" disableFastBreak() return false end
+	local c2 = player.Character if not c2 or not c2:FindFirstChild("HumanoidRootPart") then return false end
+	currentAction = "Fast Break — Knife Swing 1"
+	local ok1, _ = knifeHeavySwing(atmHumanoid) if not ok1 then return false end
+	if atmHumanoid and atmHumanoid.Health <= 0 then atmCount += 1 currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash" return true end
+	if not isRunning() then return false end
+	local c3 = player.Character if not c3 or not c3:FindFirstChild("HumanoidRootPart") then return false end
+	currentAction = "Fast Break — Knife Swing 2"
+	local ok2, _ = knifeHeavySwing(atmHumanoid) if not ok2 then return false end
+	if atmHumanoid and atmHumanoid.Health <= 0 then atmCount += 1 currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash" return true end
+	atmsSkipped += 1 currentAction = "Done" return false
+end
+
+local function collectDropsAfterBreak(dropsBefore)
+	if not DropFolder or not activeATMPos then return end
+	local function getNew()
+		local nearby = {}
+		if not activeATMPos then return nearby end
+		for _, drop in ipairs(DropFolder:GetChildren()) do
+			if drop.Name ~= "MoneyDrop" or not drop.Parent then continue end
+			if dropsBefore[drop] then continue end
+			local pos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
+			if not pos then continue end
+			if (activeATMPos - pos).Magnitude <= ATM_RADIUS then
+				table.insert(nearby, {drop = drop, dist = (activeATMPos - pos).Magnitude})
+			end
+		end
+		table.sort(nearby, function(a, b) return a.dist < b.dist end)
+		return nearby
+	end
+	isPickingUp = true
+	local nearby = getNew() local wc = 0
+	while #nearby == 0 and wc < 8 do task.wait(0.2) wc += 1 nearby = getNew() end
+	while #nearby > 0 do
+		if not isRunning() or not activeATMPos then break end
+		for _, entry in ipairs(nearby) do
+			if not isRunning() or not activeATMPos then break end
+			if not entry.drop.Parent then continue end
+			pickupDrop(entry.drop) task.wait(0.04)
+		end
+		nearby = getNew()
+	end
+	isPickingUp = false
+end
+
+-- ══ CORE ATM HIT FUNCTION ══
+-- Hidden Farm Mode logic:
+--   1. Call findHiddenCFrame to get raycast-based position below the ATM.
+--   2. If valid: use it, enable PlatformStand, mark usingHidden = true.
+--   3. PlatformStand prevents physics from fighting the heartbeat CFrame lock.
+--   4. If no damage after MAX_NO_DAMAGE_PUNCHES while hidden:
+--        → flag this group as failed, immediately switch to normal position,
+--          continue the fight from normal spot (no ATM is skipped).
+--   5. After ATM breaks: restore PlatformStand = false.
+--   6. Next visit to same group uses normal position (hiddenFailedGroups entry).
+local function hitATM(cashierGroup, wedgeBlock)
+	if not isRunning() then return end
+	local char = player.Character
+	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+	local atmHumanoid = cashierGroup:FindFirstChildOfClass("Humanoid")
+	local normalCF = wedgeBlock.CFrame * getATMOffset(cashierGroup)
+	local usingHidden = false
+
+	if getgenv().HIDDEN_FARM then
+		local hiddenCF = findHiddenCFrame(cashierGroup, wedgeBlock)
+		if hiddenCF then
+			lastATMCFrame = hiddenCF
+			usingHidden = true
+			currentAction = "Hidden Farm — Moving Below ATM"
+		else
+			lastATMCFrame = normalCF
+			currentAction = "Hidden unavailable — Normal Position"
+		end
+	else
+		lastATMCFrame = normalCF
+		currentAction = "Teleporting to ATM"
+	end
+
+	activeATM = cashierGroup
+	activeATMPos = getATMPosition(cashierGroup) or wedgeBlock.Position
+
+	local hum = getHum()
+	if usingHidden and hum then hum.PlatformStand = true end
+
+	local lockConn = RunService.Heartbeat:Connect(function()
+		if not isRunning() then return end
+		local hrp = getHRP()
+		if hrp then pcall(function() hrp.CFrame = lastATMCFrame end) end
+	end)
+
+	task.wait(0.3)
+	local dropsBefore = snapshotDrops()
+
+	local function restorePhysics()
+		if usingHidden then
+			local h2 = getHum()
+			if h2 then h2.PlatformStand = false end
+		end
+	end
+
+	if getgenv().FAST_BREAK then
+		local broke = doKnifeSwings(atmHumanoid)
+		lockConn:Disconnect() restorePhysics()
+		if not isRunning() then activeATM = nil activeATMPos = nil return end
+		if broke then task.wait(0.2) collectDropsAfterBreak(dropsBefore) end
+	else
+		currentAction = usingHidden and "Hidden Farm — Punching" or "Punching ATM"
+		local pn, nds = 0, 0
+		while atmHumanoid and atmHumanoid.Health > 0 and isRunning() do
+			local c2 = player.Character
+			if not c2 or not c2:FindFirstChild("HumanoidRootPart") then task.wait(2) break end
+			pn += 1
+			local ok, dmg = heavyPunch(atmHumanoid)
+			if not ok then break end
+			if dmg <= 0 then
+				nds += 1
+				-- If hidden and can't deal damage: flag group, switch to normal, keep going
+				if usingHidden and nds >= MAX_NO_DAMAGE_PUNCHES then
+					hiddenFailedGroups[cashierGroup] = true
+					usingHidden = false
+					lastATMCFrame = normalCF
+					restorePhysics()
+					currentAction = "Hidden failed — Switching to Normal"
+					nds = 0  -- reset no-damage counter so normal position gets a fair shot
+				elseif not usingHidden and nds >= MAX_NO_DAMAGE_PUNCHES then
+					atmsSkipped += 1 currentAction = "Done" break
+				end
+			else nds = 0 end
+			if atmHumanoid.Health <= 0 then
+				atmCount += 1
+				currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash"
+				break
+			end
+		end
+		lockConn:Disconnect() restorePhysics()
+		if not isRunning() then activeATM = nil activeATMPos = nil return end
+		task.wait(0.2) collectDropsAfterBreak(dropsBefore)
+	end
+
+	currentAction = "Done"
+	activeATM = nil activeATMPos = nil
+	task.wait(0.15) safeTeleport(lastATMCFrame) task.wait(0.15)
+	currentAction = "Scanning for ATMs"
+end
+
+local function hitATMs()
+	if getgenv().FAST_BREAK and not hasKnife() then currentAction = "Buying Knife..." ensureKnife() end
+	local cashierList = CashierFolder and CashierFolder:GetChildren() or {}
+	for _, cg in ipairs(cashierList) do
+		if not isRunning() then break end
+		if visited[cg] then continue end
+		if not isCashierOpen(cg) then currentAction = "Scanning for ATMs" continue end
+		visited[cg] = true
+		local wb = cg:FindFirstChild("Wedge")
+		if not wb then continue end
+		hitATM(cg, wb)
+	end
+end
+
+local function startFarmLoop()
+	task.spawn(function()
+		watchDropFolder()
+		while getgenv().ATM_STARTED do
+			if getgenv().ATM_RUNNING then
+				local char = player.Character
+				if not char or not char:FindFirstChild("HumanoidRootPart") then
+					currentAction = "Waiting for respawn..." task.wait(3) continue
+				end
+				local hum2 = char:FindFirstChildOfClass("Humanoid")
+				if hum2 and hum2.Health <= 0 then
+					currentAction = "Dead — waiting to respawn..." task.wait(3) continue
+				end
+				currentAction = "Scanning for ATMs"
+				-- Clear failed groups at start of each new loop — ATMs may have reset
+				clearHiddenFailed()
+				visited = {} hitATMs()
+				if getgenv().ATM_RUNNING then
+					currentAction = "Waiting for ATMs to reset..."
+					local ws = os.time()
+					while os.time() - ws < 30 do if not getgenv().ATM_STARTED then break end task.wait(1) end
+				end
+			else task.wait(0.5) end
+		end
+		UpdatePlayerStatus("idle")
+	end)
+end
+
+toggleBtn.MouseButton1Click:Connect(function()
+	if not getgenv().ATM_STARTED then
+		getgenv().ATM_STARTED = true getgenv().ATM_RUNNING = true
+		farmStart = os.time()
+		toggleBtn.BackgroundColor3 = Color3.fromRGB(165, 32, 32)
+		toggleBtn.Text = "⏸  PAUSE FARMING"
+		currentAction = "Scanning for ATMs"
+		startFarmLoop()
+	else
+		getgenv().ATM_RUNNING = not getgenv().ATM_RUNNING
+		if getgenv().ATM_RUNNING then
+			farmStart = os.time()
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(165, 32, 32)
+			toggleBtn.Text = "⏸  PAUSE FARMING"
+			currentAction = "Scanning for ATMs"
+		else
+			if farmStart then totalElapsed += os.time() - farmStart farmStart = nil end
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 175, 65)
+			toggleBtn.Text = "▶  RESUME FARMING"
+			currentAction = "Paused"
+			local h = getHum() if h then h.PlatformStand = false end
+		end
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	pcall(function()
+		local elapsed = getElapsed()
+		local mins = math.max(elapsed / 60, 0.016)
+		local rate = totalEarned / mins
+		earningsBig.Text = formatMoney(totalEarned)
+		runtimeLbl.Text  = getgenv().ATM_STARTED and formatTime(elapsed) or "Not started"
+		earnRateLbl.Text = getgenv().ATM_STARTED and (formatMoney(math.floor(rate)) .. "/min") or "$0/min"
+		punchVal.Text    = tostring(punchCount)
+		dropsVal.Text    = tostring(dropsCollected)
+		skippedVal.Text  = tostring(atmsSkipped)
+		earnRateVal.Text = getgenv().ATM_STARTED and (formatMoney(math.floor(rate)) .. "/min") or "$0/min"
+		earnRateVal.TextColor3 = getgenv().ATM_STARTED and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(210, 210, 222)
+		actionLbl.Text = currentAction
+		if getgenv().ATM_RUNNING then UpdatePlayerStatus("active", currentAction)
+		elseif getgenv().ATM_STARTED then UpdatePlayerStatus("paused")
+		else UpdatePlayerStatus("idle") end
+	end)
+end)
