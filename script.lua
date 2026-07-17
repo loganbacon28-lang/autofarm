@@ -537,11 +537,12 @@ do
 	end)
 end -- end loading screen scope
 
-local main = Instance.new("Frame")
+local main = Instance.new("CanvasGroup")
 main.Size = UDim2.new(0, 390, 0, 700)
 main.Position = UDim2.new(0, 12, 0.5, -325)  -- starts 25px below, slides up as loading fades
 main.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
 main.BorderSizePixel = 0
+main.GroupTransparency = 1  -- fully hidden until loading screen finishes
 main.Active = true
 main.Draggable = true
 main.Parent = gui
@@ -549,10 +550,10 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
 do local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = Color3.fromRGB(32, 32, 38)
 mainStroke.Thickness = 1 end
--- Slide up to final position as loading screen fades (~2.75s)
+-- Fade in + slide up as loading screen fades out (~2.75s)
 task.delay(2.75, function()
-	TweenService:Create(main, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-		{Position = UDim2.new(0, 12, 0.5, -350)}):Play()
+	TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+		{GroupTransparency = 0, Position = UDim2.new(0, 12, 0.5, -350)}):Play()
 end)
 
 local header = Instance.new("Frame")
