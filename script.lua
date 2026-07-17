@@ -500,6 +500,10 @@ local function makeDivider(parent, order)
 	local d = Instance.new("Frame") d.Size = UDim2.new(1, 0, 0, 1) d.BackgroundColor3 = Color3.fromRGB(28, 28, 36) d.BorderSizePixel = 0 d.LayoutOrder = order d.Parent = parent
 end
 
+-- ══ PRE-DECLARE: vars used by UpdatePlayerStatus + Heartbeat after avatar block ══
+local avatarStroke, statusDot, statusTxt, paidLbl
+
+do -- ── Avatar card scope ── (locals freed after this block)
 -- ══ LICENSE DATA FROM KEY SYSTEM ══
 -- Read everything the key system stored before loading this script
 local licTierleft  = tonumber(getgenv and getgenv().LICENSE_TIMELEFT or 0) or 0
@@ -558,7 +562,7 @@ avatarRing.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
 avatarRing.BorderSizePixel = 0
 avatarRing.Parent = avRow
 Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
-local avatarStroke = Instance.new("UIStroke", avatarRing)
+avatarStroke = Instance.new("UIStroke", avatarRing)
 avatarStroke.Color = licColor
 avatarStroke.Thickness = 2.5
 local avatarImg = Instance.new("ImageLabel")
@@ -569,7 +573,7 @@ avatarImg.ScaleType = Enum.ScaleType.Crop
 avatarImg.Parent = avatarRing
 Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
 
-local statusDot = Instance.new("Frame")
+statusDot = Instance.new("Frame")
 statusDot.Size = UDim2.new(0, 13, 0, 13)
 statusDot.Position = UDim2.new(0, 34, 0, 39)
 statusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
@@ -604,7 +608,7 @@ tagLbl.Font = Enum.Font.Gotham
 tagLbl.TextXAlignment = Enum.TextXAlignment.Left
 tagLbl.Parent = avRow
 
-local statusTxt = Instance.new("TextLabel")
+statusTxt = Instance.new("TextLabel")
 statusTxt.Size = UDim2.new(1, -58, 0, 12)
 statusTxt.Position = UDim2.new(0, 58, 0, 33)
 statusTxt.BackgroundTransparency = 1
@@ -741,12 +745,14 @@ task.spawn(function()
 end)
 
 -- ══ PLAYER STATUS SYSTEM ══
-local paidLbl = Instance.new("TextLabel")  -- kept for UpdatePlayerStatus compat
+paidLbl = Instance.new("TextLabel")  -- kept for UpdatePlayerStatus compat
 paidLbl.Size = UDim2.new(0, 0, 0, 0)
 paidLbl.BackgroundTransparency = 1
 paidLbl.Text = ""
 paidLbl.Visible = false
 paidLbl.Parent = avRow
+
+end -- ── end avatar card scope ── (all temp locals freed)
 
 local currentStatusState = "idle"
 local function UpdatePlayerStatus(state, statusText)
@@ -787,9 +793,15 @@ local function onCharacterAdded(newChar)
 end
 player.CharacterAdded:Connect(onCharacterAdded)
 
+-- ══ PRE-DECLARE: live scanner values ══
+local atmAvailVal, atmBrokenVal, detScanLbl
+local vaultOpenVal, vaultClosedVal, vaultScanLbl
+
+do -- ── detection + vault card scope ──
 -- ══ DETECTION CARDS ══
 local detCard = makeCard(2)
-local _, detScanLbl = makeCardHeaderWithScan(detCard, 1, 98439685495165, "Live Detection", true)
+local _, _detScanLbl = makeCardHeaderWithScan(detCard, 1, 98439685495165, "Live Detection", true)
+detScanLbl = _detScanLbl
 makeSpacer(detCard, 2, 6)
 local detGrid = Instance.new("Frame") detGrid.Size = UDim2.new(1, 0, 0, 62) detGrid.BackgroundTransparency = 1 detGrid.LayoutOrder = 3 detGrid.Parent = detCard
 local detGL = Instance.new("UIListLayout", detGrid) detGL.FillDirection = Enum.FillDirection.Horizontal detGL.Padding = UDim.new(0, 7)
@@ -807,16 +819,19 @@ local function makeDetBox(parent, layoutOrder, bg, iconAsset, labelText, valColo
 	return vL
 end
 
-local atmAvailVal  = makeDetBox(detGrid, 1, Color3.fromRGB(13,30,15), 83562019198470, "ATMs Available", Color3.fromRGB(25,190,75))
-local atmBrokenVal = makeDetBox(detGrid, 2, Color3.fromRGB(30,13,13), 88329562081184, "ATMs Broken",    Color3.fromRGB(210,55,55))
+atmAvailVal  = makeDetBox(detGrid, 1, Color3.fromRGB(13,30,15), 83562019198470, "ATMs Available", Color3.fromRGB(25,190,75))
+atmBrokenVal = makeDetBox(detGrid, 2, Color3.fromRGB(30,13,13), 88329562081184, "ATMs Broken",    Color3.fromRGB(210,55,55))
 
+-- ══ VAULT CARDS ══
 local vaultCard = makeCard(3)
-local _, vaultScanLbl = makeCardHeaderWithScan(vaultCard, 1, 88774952696393, "Live Vault Detection", true)
+local _, _vaultScanLbl = makeCardHeaderWithScan(vaultCard, 1, 88774952696393, "Live Vault Detection", true)
+vaultScanLbl = _vaultScanLbl
 makeSpacer(vaultCard, 2, 6)
 local vaultGrid = Instance.new("Frame") vaultGrid.Size = UDim2.new(1, 0, 0, 62) vaultGrid.BackgroundTransparency = 1 vaultGrid.LayoutOrder = 3 vaultGrid.Parent = vaultCard
 local vGL = Instance.new("UIListLayout", vaultGrid) vGL.FillDirection = Enum.FillDirection.Horizontal vGL.Padding = UDim.new(0, 7)
-local vaultOpenVal   = makeDetBox(vaultGrid, 1, Color3.fromRGB(13,30,15), 94851890970090, "Vaults Open",   Color3.fromRGB(25,190,75))
-local vaultClosedVal = makeDetBox(vaultGrid, 2, Color3.fromRGB(30,13,13), 77505460123202, "Vaults Closed", Color3.fromRGB(210,55,55))
+vaultOpenVal   = makeDetBox(vaultGrid, 1, Color3.fromRGB(13,30,15), 94851890970090, "Vaults Open",   Color3.fromRGB(25,190,75))
+vaultClosedVal = makeDetBox(vaultGrid, 2, Color3.fromRGB(30,13,13), 77505460123202, "Vaults Closed", Color3.fromRGB(210,55,55))
+end -- ── end detection + vault scope ──
 
 -- ══ AUTOMATION CARD ══
 local autoCard = makeCard(4)
@@ -836,39 +851,39 @@ local function makeToggleRow(parent, order, title, subtitle, enableText)
 end
 
 local radTrack, radThumb, radSubLbl, radTogLbl = makeToggleRow(autoCard, 3, "ATM Radius", "Scan " .. ATM_RADIUS .. " studs around active ATM — OFF", "Enable ATM Radius")
-local radBadge = Instance.new("TextLabel")
+do local radBadge = Instance.new("TextLabel")
 radBadge.Size = UDim2.new(0, 68, 0, 14) radBadge.Position = UDim2.new(1, -70, 0, 1)
 radBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) radBadge.BorderSizePixel = 0
 radBadge.Text = "👑 PREMIUM" radBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
 radBadge.TextSize = 8 radBadge.Font = Enum.Font.GothamBold
 radBadge.TextXAlignment = Enum.TextXAlignment.Center radBadge.ZIndex = 3
 radBadge.Parent = radTrack.Parent
-Instance.new("UICorner", radBadge).CornerRadius = UDim.new(0, 4)
+Instance.new("UICorner", radBadge).CornerRadius = UDim.new(0, 4) end
 makeSpacer(autoCard, 4, 3) makeDivider(autoCard, 5) makeSpacer(autoCard, 6, 3)
 
 local fbTrack, fbThumb, fbSubLbl, fbTogLbl = makeToggleRow(autoCard, 7, "Fast Break ATM", "Use knife for instant break — OFF", "Enable Fast Break")
-local fbBadge = Instance.new("TextLabel")
+do local fbBadge = Instance.new("TextLabel")
 fbBadge.Size = UDim2.new(0, 68, 0, 14) fbBadge.Position = UDim2.new(1, -70, 0, 1)
 fbBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) fbBadge.BorderSizePixel = 0
 fbBadge.Text = "👑 PREMIUM" fbBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
 fbBadge.TextSize = 8 fbBadge.Font = Enum.Font.GothamBold
 fbBadge.TextXAlignment = Enum.TextXAlignment.Center fbBadge.ZIndex = 3
 fbBadge.Parent = fbTrack.Parent
-Instance.new("UICorner", fbBadge).CornerRadius = UDim.new(0, 4)
+Instance.new("UICorner", fbBadge).CornerRadius = UDim.new(0, 4) end
 makeSpacer(autoCard, 8, 3) makeDivider(autoCard, 9) makeSpacer(autoCard, 10, 3)
 
 local hfTrack, hfThumb, hfSubLbl, hfTogLbl = makeToggleRow(autoCard, 11,
 	"Underground Mode",
 	"To avoid people killing you while farming — OFF",
 	"Enable Underground Mode")
-local ugBadge = Instance.new("TextLabel")
+do local ugBadge = Instance.new("TextLabel")
 ugBadge.Size = UDim2.new(0, 68, 0, 14) ugBadge.Position = UDim2.new(1, -70, 0, 1)
 ugBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) ugBadge.BorderSizePixel = 0
 ugBadge.Text = "👑 PREMIUM" ugBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
 ugBadge.TextSize = 8 ugBadge.Font = Enum.Font.GothamBold
 ugBadge.TextXAlignment = Enum.TextXAlignment.Center ugBadge.ZIndex = 3
 ugBadge.Parent = hfTrack.Parent
-Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4)
+Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4) end
 
 local function animateToggle(track, thumb, on)
 	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
