@@ -353,9 +353,193 @@ gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = gethui()
 
+-- ══ LOADING SCREEN ══
+-- Shown before main menu; fades out after LOAD_TIME seconds.
+do
+	local LOAD_TIME = 2.2
+
+	local loadScreen = Instance.new("CanvasGroup")
+	loadScreen.Size       = UDim2.new(0, 340, 0, 215)
+	loadScreen.AnchorPoint= Vector2.new(0.5, 0.5)
+	loadScreen.Position   = UDim2.new(0.5, 0, 0.5, 0)
+	loadScreen.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
+	loadScreen.BorderSizePixel  = 0
+	loadScreen.GroupTransparency= 1
+	loadScreen.ZIndex     = 50
+	loadScreen.Parent     = gui
+	Instance.new("UICorner",   loadScreen).CornerRadius = UDim.new(0, 16)
+	local lsStroke = Instance.new("UIStroke", loadScreen)
+	lsStroke.Color = Color3.fromRGB(34, 197, 94)
+	lsStroke.Thickness = 1.5
+
+	-- Fade in immediately
+	TweenService:Create(loadScreen, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {GroupTransparency = 0}):Play()
+
+	-- Icon
+	local lsIco = Instance.new("ImageLabel")
+	lsIco.Size = UDim2.new(0, 36, 0, 36)
+	lsIco.AnchorPoint = Vector2.new(0.5, 0)
+	lsIco.Position = UDim2.new(0.5, 0, 0, 22)
+	lsIco.BackgroundTransparency = 1
+	lsIco.Image = "rbxassetid://82352293916728"
+	lsIco.ScaleType = Enum.ScaleType.Fit
+	lsIco.Parent = loadScreen
+
+	-- Title
+	local lsTitle = Instance.new("TextLabel")
+	lsTitle.Size = UDim2.new(1, 0, 0, 26)
+	lsTitle.Position = UDim2.new(0, 0, 0, 64)
+	lsTitle.BackgroundTransparency = 1
+	lsTitle.Text = "ATM Farmer"
+	lsTitle.TextColor3 = Color3.fromRGB(235, 235, 245)
+	lsTitle.TextSize = 20
+	lsTitle.Font = Enum.Font.GothamBold
+	lsTitle.TextXAlignment = Enum.TextXAlignment.Center
+	lsTitle.Parent = loadScreen
+
+	-- Subtitle / version
+	local lsVer = Instance.new("TextLabel")
+	lsVer.Size = UDim2.new(1, 0, 0, 14)
+	lsVer.Position = UDim2.new(0, 0, 0, 90)
+	lsVer.BackgroundTransparency = 1
+	lsVer.Text = "v1.0.0  •  by Loganbacon28"
+	lsVer.TextColor3 = Color3.fromRGB(55, 55, 72)
+	lsVer.TextSize = 10
+	lsVer.Font = Enum.Font.Gotham
+	lsVer.TextXAlignment = Enum.TextXAlignment.Center
+	lsVer.Parent = loadScreen
+
+	-- Spinner ring: 8 dots arranged in a circle
+	local spinContainer = Instance.new("Frame")
+	spinContainer.Size = UDim2.new(0, 40, 0, 40)
+	spinContainer.AnchorPoint = Vector2.new(0.5, 0)
+	spinContainer.Position = UDim2.new(0.5, 0, 0, 112)
+	spinContainer.BackgroundTransparency = 1
+	spinContainer.Parent = loadScreen
+
+	local NUM_DOTS = 8
+	local spinDots = {}
+	for i = 1, NUM_DOTS do
+		local angle = ((i - 1) / NUM_DOTS) * math.pi * 2
+		local dot = Instance.new("Frame")
+		dot.Size = UDim2.new(0, 6, 0, 6)
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Position = UDim2.new(0.5, math.cos(angle) * 15, 0.5, math.sin(angle) * 15)
+		dot.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+		dot.BackgroundTransparency = 1 - (i / NUM_DOTS)
+		dot.BorderSizePixel = 0
+		dot.Parent = spinContainer
+		Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+		spinDots[i] = dot
+	end
+
+	-- Progress bar background
+	local pbBg = Instance.new("Frame")
+	pbBg.Size = UDim2.new(0, 270, 0, 4)
+	pbBg.AnchorPoint = Vector2.new(0.5, 0)
+	pbBg.Position = UDim2.new(0.5, 0, 0, 162)
+	pbBg.BackgroundColor3 = Color3.fromRGB(26, 26, 34)
+	pbBg.BorderSizePixel = 0
+	pbBg.Parent = loadScreen
+	Instance.new("UICorner", pbBg).CornerRadius = UDim.new(0, 2)
+
+	-- Progress fill
+	local pbFill = Instance.new("Frame")
+	pbFill.Size = UDim2.new(0, 0, 1, 0)
+	pbFill.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+	pbFill.BorderSizePixel = 0
+	pbFill.Parent = pbBg
+	Instance.new("UICorner", pbFill).CornerRadius = UDim.new(0, 2)
+
+	-- Status text (cycles through messages)
+	local lsStatus = Instance.new("TextLabel")
+	lsStatus.Size = UDim2.new(1, 0, 0, 14)
+	lsStatus.Position = UDim2.new(0, 0, 0, 175)
+	lsStatus.BackgroundTransparency = 1
+	lsStatus.Text = "Initializing systems..."
+	lsStatus.TextColor3 = Color3.fromRGB(55, 55, 72)
+	lsStatus.TextSize = 10
+	lsStatus.Font = Enum.Font.Gotham
+	lsStatus.TextXAlignment = Enum.TextXAlignment.Center
+	lsStatus.Parent = loadScreen
+
+	-- Percentage text
+	local lsPct = Instance.new("TextLabel")
+	lsPct.Size = UDim2.new(1, 0, 0, 14)
+	lsPct.Position = UDim2.new(0, 0, 0, 193)
+	lsPct.BackgroundTransparency = 1
+	lsPct.Text = "0%"
+	lsPct.TextColor3 = Color3.fromRGB(34, 197, 94)
+	lsPct.TextSize = 10
+	lsPct.Font = Enum.Font.GothamBold
+	lsPct.TextXAlignment = Enum.TextXAlignment.Center
+	lsPct.Parent = loadScreen
+
+	-- Animate the loading screen
+	local LOAD_MSGS = {
+		{t = 0.00, msg = "Initializing systems..."},
+		{t = 0.20, msg = "Loading interface..."},
+		{t = 0.42, msg = "Fetching player data..."},
+		{t = 0.64, msg = "Connecting to server..."},
+		{t = 0.82, msg = "Verifying license..."},
+		{t = 0.95, msg = "Almost ready..."},
+	}
+
+	-- Animate progress bar smoothly
+	TweenService:Create(pbFill,
+		TweenInfo.new(LOAD_TIME - 0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+		{Size = UDim2.new(1, 0, 1, 0)}):Play()
+
+	task.spawn(function()
+		local startTime = tick()
+		local spinOffset = 0
+		local msgIdx = 0
+
+		while tick() - startTime < LOAD_TIME do
+			local elapsed  = tick() - startTime
+			local progress = math.clamp(elapsed / LOAD_TIME, 0, 1)
+
+			-- Spin dots
+			spinOffset = (spinOffset + 0.18) % NUM_DOTS
+			for i = 1, NUM_DOTS do
+				local t = ((i - 1 - spinOffset) % NUM_DOTS) / NUM_DOTS
+				spinDots[i].BackgroundTransparency = t * 0.9
+			end
+
+			-- Update percentage
+			lsPct.Text = math.floor(progress * 100) .. "%"
+
+			-- Cycle messages
+			for mi, entry in ipairs(LOAD_MSGS) do
+				if progress >= entry.t and mi > msgIdx then
+					msgIdx = mi
+					lsStatus.Text = entry.msg
+					-- Quick fade-in for message
+					lsStatus.TextTransparency = 0.8
+					TweenService:Create(lsStatus, TweenInfo.new(0.2), {TextTransparency = 0}):Play()
+				end
+			end
+
+			task.wait(0.05)
+		end
+
+		-- Final state: 100% + welcome message
+		lsPct.Text    = "100%"
+		lsStatus.Text = "Welcome, " .. player.DisplayName .. "!"
+		TweenService:Create(lsStatus, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(34, 197, 94)}):Play()
+
+		task.wait(0.55)
+
+		-- Fade out loading screen — menu slides in simultaneously
+		TweenService:Create(loadScreen, TweenInfo.new(0.45, Enum.EasingStyle.Quint), {GroupTransparency = 1}):Play()
+		task.wait(0.5)
+		loadScreen:Destroy()
+	end)
+end -- end loading screen scope
+
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 390, 0, 700)
-main.Position = UDim2.new(0, 12, 0.5, -330)  -- starts 20px below final
+main.Position = UDim2.new(0, 12, 0.5, -325)  -- starts 25px below, slides up as loading fades
 main.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
 main.BorderSizePixel = 0
 main.Active = true
@@ -365,9 +549,9 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
 do local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = Color3.fromRGB(32, 32, 38)
 mainStroke.Thickness = 1 end
--- Slide up + scroll fade in on open
-task.delay(0.05, function()
-	TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+-- Slide up to final position as loading screen fades (~2.75s)
+task.delay(2.75, function()
+	TweenService:Create(main, TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 		{Position = UDim2.new(0, 12, 0.5, -350)}):Play()
 end)
 
@@ -639,19 +823,19 @@ tierStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 tierStatusLbl.TextTransparency = 1  -- starts invisible
 tierStatusLbl.Parent = avRow
 
--- Welcome fade-in animations
+-- Welcome fade-in animations — timed to start as loading screen fades out
 displayLbl.TextTransparency = 1
 tagLbl.TextTransparency = 1
-task.delay(0.3, function()
-	TweenService:Create(displayLbl, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
-	TweenService:Create(displayLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint),
+task.delay(2.9, function()
+	TweenService:Create(displayLbl, TweenInfo.new(0.55, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+	TweenService:Create(displayLbl, TweenInfo.new(0.5, Enum.EasingStyle.Quint),
 		{Position = UDim2.new(0, 58, 0, 3)}):Play()
 end)
-task.delay(0.45, function()
-	TweenService:Create(tagLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+task.delay(3.05, function()
+	TweenService:Create(tagLbl, TweenInfo.new(0.45, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
 end)
-task.delay(0.6, function()
-	TweenService:Create(tierStatusLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+task.delay(3.2, function()
+	TweenService:Create(tierStatusLbl, TweenInfo.new(0.45, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
 end)
 
 statusTxt = Instance.new("TextLabel")
