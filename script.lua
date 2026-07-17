@@ -49,6 +49,10 @@ getgenv().RADIUS_ENABLED = false
 getgenv().FAST_BREAK = false
 getgenv().HIDDEN_FARM = false
 
+-- Set by key system before this script loads. trial = Free, 3day/weekly/monthly = Premium.
+local IS_PREMIUM = getgenv and getgenv().IS_PREMIUM == true or false
+local DISCORD_INVITE = "https://discord.gg/uCUSZeuM48"
+
 local farmStart = nil
 local totalElapsed = 0
 local totalEarned = 0
@@ -602,16 +606,40 @@ local function makeToggleRow(parent, order, title, subtitle, enableText)
 	return track, thumb, subL, togLbl
 end
 
-local radTrack, radThumb, radSubLbl, radTogLbl = makeToggleRow(autoCard, 3, "ATM Money Drop Radius", "Scan " .. ATM_RADIUS .. " studs around active ATM — OFF", "Enable Radius Scan")
+local radTrack, radThumb, radSubLbl, radTogLbl = makeToggleRow(autoCard, 3, "ATM Radius", "Scan " .. ATM_RADIUS .. " studs around active ATM — OFF", "Enable ATM Radius")
+local radBadge = Instance.new("TextLabel")
+radBadge.Size = UDim2.new(0, 68, 0, 14) radBadge.Position = UDim2.new(1, -70, 0, 1)
+radBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) radBadge.BorderSizePixel = 0
+radBadge.Text = "👑 PREMIUM" radBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
+radBadge.TextSize = 8 radBadge.Font = Enum.Font.GothamBold
+radBadge.TextXAlignment = Enum.TextXAlignment.Center radBadge.ZIndex = 3
+radBadge.Parent = radTrack.Parent
+Instance.new("UICorner", radBadge).CornerRadius = UDim.new(0, 4)
 makeSpacer(autoCard, 4, 3) makeDivider(autoCard, 5) makeSpacer(autoCard, 6, 3)
 
 local fbTrack, fbThumb, fbSubLbl, fbTogLbl = makeToggleRow(autoCard, 7, "Fast Break ATM", "Use knife for instant break — OFF", "Enable Fast Break")
+local fbBadge = Instance.new("TextLabel")
+fbBadge.Size = UDim2.new(0, 68, 0, 14) fbBadge.Position = UDim2.new(1, -70, 0, 1)
+fbBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) fbBadge.BorderSizePixel = 0
+fbBadge.Text = "👑 PREMIUM" fbBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
+fbBadge.TextSize = 8 fbBadge.Font = Enum.Font.GothamBold
+fbBadge.TextXAlignment = Enum.TextXAlignment.Center fbBadge.ZIndex = 3
+fbBadge.Parent = fbTrack.Parent
+Instance.new("UICorner", fbBadge).CornerRadius = UDim.new(0, 4)
 makeSpacer(autoCard, 8, 3) makeDivider(autoCard, 9) makeSpacer(autoCard, 10, 3)
 
 local hfTrack, hfThumb, hfSubLbl, hfTogLbl = makeToggleRow(autoCard, 11,
-	"Hidden Farm Mode",
-	"Farm from underneath the ATM — OFF",
-	"Enable Hidden Farm Mode")
+	"Underground Mode",
+	"To avoid people killing you while farming — OFF",
+	"Enable Underground Mode")
+local ugBadge = Instance.new("TextLabel")
+ugBadge.Size = UDim2.new(0, 68, 0, 14) ugBadge.Position = UDim2.new(1, -70, 0, 1)
+ugBadge.BackgroundColor3 = Color3.fromRGB(38, 30, 8) ugBadge.BorderSizePixel = 0
+ugBadge.Text = "👑 PREMIUM" ugBadge.TextColor3 = Color3.fromRGB(212, 160, 40)
+ugBadge.TextSize = 8 ugBadge.Font = Enum.Font.GothamBold
+ugBadge.TextXAlignment = Enum.TextXAlignment.Center ugBadge.ZIndex = 3
+ugBadge.Parent = hfTrack.Parent
+Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4)
 
 local function animateToggle(track, thumb, on)
 	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -640,7 +668,7 @@ end
 
 local function setHiddenFarmToggle(on)
 	getgenv().HIDDEN_FARM = on animateToggle(hfTrack, hfThumb, on)
-	hfSubLbl.Text = "Farm from underneath the ATM — " .. (on and "ON" or "OFF")
+	hfSubLbl.Text = "To avoid people killing you while farming — " .. (on and "ON" or "OFF")
 	hfSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
 	hfTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
 	if not on then
@@ -649,9 +677,144 @@ local function setHiddenFarmToggle(on)
 	end
 end
 
-radTrack.MouseButton1Click:Connect(function() setRadiusToggle(not getgenv().RADIUS_ENABLED) end)
-fbTrack.MouseButton1Click:Connect(function() setFastBreakToggle(not getgenv().FAST_BREAK) end)
-hfTrack.MouseButton1Click:Connect(function() setHiddenFarmToggle(not getgenv().HIDDEN_FARM) end)
+-- ══ PREMIUM POPUP ══
+local function showPremiumPopup()
+	local popOverlay = Instance.new("Frame")
+	popOverlay.Size = UDim2.new(1, 0, 1, 0)
+	popOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	popOverlay.BackgroundTransparency = 1
+	popOverlay.BorderSizePixel = 0
+	popOverlay.ZIndex = 50
+	popOverlay.Parent = gui
+	TweenService:Create(popOverlay, TweenInfo.new(0.2), {BackgroundTransparency = 0.55}):Play()
+
+	local pop = Instance.new("CanvasGroup")
+	pop.Size = UDim2.new(0, 300, 0, 0)
+	pop.AutomaticSize = Enum.AutomaticSize.Y
+	pop.AnchorPoint = Vector2.new(0.5, 0.5)
+	pop.Position = UDim2.new(0.5, 0, 0.5, 0)
+	pop.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+	pop.BorderSizePixel = 0
+	pop.GroupTransparency = 1
+	pop.ZIndex = 51
+	pop.Parent = gui
+	Instance.new("UICorner", pop).CornerRadius = UDim.new(0, 14)
+	local popStroke = Instance.new("UIStroke", pop)
+	popStroke.Color = Color3.fromRGB(212, 160, 40) popStroke.Thickness = 1
+	local popLayout = Instance.new("UIListLayout", pop) popLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	local popPad = Instance.new("UIPadding", pop)
+	popPad.PaddingTop = UDim.new(0, 22) popPad.PaddingBottom = UDim.new(0, 20)
+	popPad.PaddingLeft = UDim.new(0, 20) popPad.PaddingRight = UDim.new(0, 20)
+
+	local popScale = Instance.new("UIScale", pop) popScale.Scale = 0.88
+	TweenService:Create(pop, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
+	TweenService:Create(popScale, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+
+	local crownWrap = Instance.new("Frame") crownWrap.Size = UDim2.new(1,0,0,44) crownWrap.BackgroundTransparency = 1 crownWrap.LayoutOrder = 1 crownWrap.Parent = pop
+	local crownCircle = Instance.new("Frame") crownCircle.Size = UDim2.new(0,44,0,44) crownCircle.AnchorPoint = Vector2.new(0.5,0) crownCircle.Position = UDim2.new(0.5,0,0,0) crownCircle.BackgroundColor3 = Color3.fromRGB(38,30,8) crownCircle.BorderSizePixel = 0 crownCircle.Parent = crownWrap
+	Instance.new("UICorner", crownCircle).CornerRadius = UDim.new(1,0)
+	local crownTxt = Instance.new("TextLabel") crownTxt.Size = UDim2.new(1,0,1,0) crownTxt.BackgroundTransparency = 1 crownTxt.Text = "👑" crownTxt.TextSize = 22 crownTxt.Font = Enum.Font.GothamBold crownTxt.TextXAlignment = Enum.TextXAlignment.Center crownTxt.TextYAlignment = Enum.TextYAlignment.Center crownTxt.Parent = crownCircle
+
+	local s1 = Instance.new("Frame") s1.Size=UDim2.new(1,0,0,10) s1.BackgroundTransparency=1 s1.LayoutOrder=2 s1.Parent=pop
+
+	local popTitle = Instance.new("TextLabel") popTitle.Size=UDim2.new(1,0,0,22) popTitle.BackgroundTransparency=1 popTitle.Text="Premium Feature" popTitle.TextColor3=Color3.fromRGB(212,175,55) popTitle.TextSize=16 popTitle.Font=Enum.Font.GothamBold popTitle.TextXAlignment=Enum.TextXAlignment.Center popTitle.LayoutOrder=3 popTitle.Parent=pop
+
+	local s2 = Instance.new("Frame") s2.Size=UDim2.new(1,0,0,8) s2.BackgroundTransparency=1 s2.LayoutOrder=4 s2.Parent=pop
+
+	local popMsg = Instance.new("TextLabel") popMsg.Size=UDim2.new(1,0,0,0) popMsg.AutomaticSize=Enum.AutomaticSize.Y popMsg.BackgroundTransparency=1 popMsg.Text="This feature is only available for Premium users.\n\nUpgrade your key to unlock this feature and gain access to every premium option." popMsg.TextColor3=Color3.fromRGB(120,120,138) popMsg.TextSize=12 popMsg.Font=Enum.Font.Gotham popMsg.TextXAlignment=Enum.TextXAlignment.Center popMsg.TextWrapped=true popMsg.LayoutOrder=5 popMsg.Parent=pop
+
+	local s3 = Instance.new("Frame") s3.Size=UDim2.new(1,0,0,16) s3.BackgroundTransparency=1 s3.LayoutOrder=6 s3.Parent=pop
+
+	local btnRow = Instance.new("Frame") btnRow.Size=UDim2.new(1,0,0,36) btnRow.BackgroundTransparency=1 btnRow.LayoutOrder=7 btnRow.Parent=pop
+	local btnL = Instance.new("UIListLayout",btnRow) btnL.FillDirection=Enum.FillDirection.Horizontal btnL.Padding=UDim.new(0,10) btnL.HorizontalAlignment=Enum.HorizontalAlignment.Center
+
+	local function closePopup()
+		TweenService:Create(pop, TweenInfo.new(0.2,Enum.EasingStyle.Quad), {GroupTransparency=1}):Play()
+		TweenService:Create(popScale, TweenInfo.new(0.2,Enum.EasingStyle.Quad), {Scale=0.9}):Play()
+		TweenService:Create(popOverlay, TweenInfo.new(0.2), {BackgroundTransparency=1}):Play()
+		task.wait(0.25) pop:Destroy() popOverlay:Destroy()
+	end
+
+	local okBtn = Instance.new("TextButton") okBtn.Size=UDim2.new(0,110,1,0) okBtn.BackgroundColor3=Color3.fromRGB(26,26,34) okBtn.Text="OK" okBtn.TextColor3=Color3.fromRGB(180,180,195) okBtn.TextSize=13 okBtn.Font=Enum.Font.GothamBold okBtn.BorderSizePixel=0 okBtn.LayoutOrder=1 okBtn.Parent=btnRow
+	Instance.new("UICorner",okBtn).CornerRadius=UDim.new(0,8)
+	okBtn.MouseButton1Click:Connect(function() task.spawn(closePopup) end)
+
+	local upgradeBtn = Instance.new("TextButton") upgradeBtn.Size=UDim2.new(0,140,1,0) upgradeBtn.BackgroundColor3=Color3.fromRGB(212,160,40) upgradeBtn.Text="  Upgrade" upgradeBtn.TextColor3=Color3.fromRGB(255,255,255) upgradeBtn.TextSize=13 upgradeBtn.Font=Enum.Font.GothamBold upgradeBtn.BorderSizePixel=0 upgradeBtn.LayoutOrder=2 upgradeBtn.Parent=btnRow
+	Instance.new("UICorner",upgradeBtn).CornerRadius=UDim.new(0,8)
+	upgradeBtn.MouseButton1Click:Connect(function()
+		pcall(function() setclipboard(DISCORD_INVITE) end)
+		upgradeBtn.Text = "✓ Copied!" upgradeBtn.BackgroundColor3 = Color3.fromRGB(34,150,70)
+		task.spawn(function()
+			task.wait(2)
+			upgradeBtn.Text = "  Upgrade" upgradeBtn.BackgroundColor3 = Color3.fromRGB(212,160,40)
+		end)
+		task.spawn(function()
+			task.wait(0.3)
+			showNotification("Discord Copied!", "Join the Discord server to purchase Premium keys and receive support.", 3)
+		end)
+	end)
+end
+
+-- ══ NOTIFICATION SYSTEM ══
+function showNotification(title, message, duration)
+	duration = duration or 3
+	local notif = Instance.new("Frame")
+	notif.Size = UDim2.new(0, 260, 0, 0) notif.AutomaticSize = Enum.AutomaticSize.Y
+	notif.AnchorPoint = Vector2.new(1, 1)
+	notif.Position = UDim2.new(1, 320, 1, -20)
+	notif.BackgroundColor3 = Color3.fromRGB(18, 18, 24) notif.BorderSizePixel = 0 notif.ZIndex = 60
+	notif.Parent = gui
+	Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
+	local nStroke = Instance.new("UIStroke", notif) nStroke.Color = Color3.fromRGB(34, 197, 94) nStroke.Thickness = 1
+	local nLayout = Instance.new("UIListLayout", notif) nLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	local nPad = Instance.new("UIPadding", notif)
+	nPad.PaddingTop=UDim.new(0,12) nPad.PaddingBottom=UDim.new(0,12) nPad.PaddingLeft=UDim.new(0,14) nPad.PaddingRight=UDim.new(0,14)
+	local nt = Instance.new("TextLabel") nt.Size=UDim2.new(1,0,0,16) nt.BackgroundTransparency=1 nt.Text=title nt.TextColor3=Color3.fromRGB(34,197,94) nt.TextSize=13 nt.Font=Enum.Font.GothamBold nt.TextXAlignment=Enum.TextXAlignment.Left nt.LayoutOrder=1 nt.Parent=notif
+	local nm = Instance.new("TextLabel") nm.Size=UDim2.new(1,0,0,0) nm.AutomaticSize=Enum.AutomaticSize.Y nm.BackgroundTransparency=1 nm.Text=message nm.TextColor3=Color3.fromRGB(100,100,122) nm.TextSize=11 nm.Font=Enum.Font.Gotham nm.TextXAlignment=Enum.TextXAlignment.Left nm.TextWrapped=true nm.LayoutOrder=2 nm.Parent=notif
+	TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position=UDim2.new(1,-14,1,-20)}):Play()
+	task.delay(duration, function()
+		if notif and notif.Parent then
+			TweenService:Create(notif, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position=UDim2.new(1,320,1,-20)}):Play()
+			task.wait(0.3) if notif then notif:Destroy() end
+		end
+	end)
+end
+
+-- ══ PREMIUM TOGGLE SHAKE ══
+local function shakePremiumToggle(track)
+	local base = track.Position
+	for _, x in ipairs({5,-5,4,-4,2,-2,0}) do
+		TweenService:Create(track, TweenInfo.new(0.05, Enum.EasingStyle.Linear),
+			{Position = UDim2.new(base.X.Scale, base.X.Offset+x, base.Y.Scale, base.Y.Offset)}):Play()
+		task.wait(0.055)
+	end
+	track.Position = base
+end
+
+-- ══ PREMIUM-AWARE TOGGLE HANDLERS ══
+radTrack.MouseButton1Click:Connect(function()
+	if not IS_PREMIUM then
+		task.spawn(function() shakePremiumToggle(radTrack) end)
+		showPremiumPopup() return
+	end
+	setRadiusToggle(not getgenv().RADIUS_ENABLED)
+end)
+
+fbTrack.MouseButton1Click:Connect(function()
+	if not IS_PREMIUM then
+		task.spawn(function() shakePremiumToggle(fbTrack) end)
+		showPremiumPopup() return
+	end
+	setFastBreakToggle(not getgenv().FAST_BREAK)
+end)
+
+hfTrack.MouseButton1Click:Connect(function()
+	if not IS_PREMIUM then
+		task.spawn(function() shakePremiumToggle(hfTrack) end)
+		showPremiumPopup() return
+	end
+	setHiddenFarmToggle(not getgenv().HIDDEN_FARM)
+end)
 
 -- ══ STATS CARD ══
 local statsCard = makeCard(5)
