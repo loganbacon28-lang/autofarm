@@ -310,9 +310,13 @@ local function knifeHeavySwing(atmHumanoid)
 	return true, hpBefore - hpAfter
 end
 
-local radiusPaintSignal = DrawingImmediate.GetPaint(1)
+local radiusPaintSignal = nil
+pcall(function()
+	radiusPaintSignal = DrawingImmediate.GetPaint(1)
+end)
 
 local function drawCircleOnGround(center, radius, color, opacity, segments)
+	if not DrawingImmediate then return end
 	segments = segments or 32
 	local points = {}
 	for i = 0, segments - 1 do
@@ -329,14 +333,16 @@ local function drawCircleOnGround(center, radius, color, opacity, segments)
 	end
 end
 
-radiusPaintSignal:Connect(function()
-	if not getgenv().RADIUS_ENABLED then return end
-	if not activeATM or not activeATMPos then return end
-	local sc, onScreen = Camera:WorldToViewportPoint(activeATMPos)
-	if not onScreen then return end
-	drawCircleOnGround(activeATMPos, ATM_RADIUS, Color3.fromRGB(255, 255, 255), 1, 32)
-	DrawingImmediate.Text(Vector2.new(sc.X - 30, sc.Y - 20), 0, 13, Color3.fromRGB(255, 255, 255), 1, activeATM.Name .. " | ACTIVE TARGET", false)
-end)
+if radiusPaintSignal then
+	radiusPaintSignal:Connect(function()
+		if not getgenv().RADIUS_ENABLED then return end
+		if not activeATM or not activeATMPos then return end
+		local sc, onScreen = Camera:WorldToViewportPoint(activeATMPos)
+		if not onScreen then return end
+		drawCircleOnGround(activeATMPos, ATM_RADIUS, Color3.fromRGB(255, 255, 255), 1, 32)
+		DrawingImmediate.Text(Vector2.new(sc.X - 30, sc.Y - 20), 0, 13, Color3.fromRGB(255, 255, 255), 1, activeATM.Name .. " | ACTIVE TARGET", false)
+	end)
+end
 
 -- ══════════════════════════════════════
 -- GUI
@@ -900,6 +906,32 @@ local function setHiddenFarmToggle(on)
 	end
 end
 
+-- ══ NOTIFICATION SYSTEM ══
+-- Declared first so showPremiumPopup can safely call it
+local function showNotification(title, message, duration)
+	duration = duration or 3
+	local notif = Instance.new("Frame")
+	notif.Size = UDim2.new(0, 260, 0, 0) notif.AutomaticSize = Enum.AutomaticSize.Y
+	notif.AnchorPoint = Vector2.new(1, 1)
+	notif.Position = UDim2.new(1, 320, 1, -20)
+	notif.BackgroundColor3 = Color3.fromRGB(18, 18, 24) notif.BorderSizePixel = 0 notif.ZIndex = 60
+	notif.Parent = gui
+	Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
+	Instance.new("UIStroke", notif).Color = Color3.fromRGB(34, 197, 94)
+	local nLayout = Instance.new("UIListLayout", notif) nLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	local nPad = Instance.new("UIPadding", notif)
+	nPad.PaddingTop=UDim.new(0,12) nPad.PaddingBottom=UDim.new(0,12) nPad.PaddingLeft=UDim.new(0,14) nPad.PaddingRight=UDim.new(0,14)
+	local nt = Instance.new("TextLabel") nt.Size=UDim2.new(1,0,0,16) nt.BackgroundTransparency=1 nt.Text=title nt.TextColor3=Color3.fromRGB(34,197,94) nt.TextSize=13 nt.Font=Enum.Font.GothamBold nt.TextXAlignment=Enum.TextXAlignment.Left nt.LayoutOrder=1 nt.Parent=notif
+	local nm = Instance.new("TextLabel") nm.Size=UDim2.new(1,0,0,0) nm.AutomaticSize=Enum.AutomaticSize.Y nm.BackgroundTransparency=1 nm.Text=message nm.TextColor3=Color3.fromRGB(100,100,122) nm.TextSize=11 nm.Font=Enum.Font.Gotham nm.TextXAlignment=Enum.TextXAlignment.Left nm.TextWrapped=true nm.LayoutOrder=2 nm.Parent=notif
+	TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position=UDim2.new(1,-14,1,-20)}):Play()
+	task.delay(duration, function()
+		if notif and notif.Parent then
+			TweenService:Create(notif, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position=UDim2.new(1,320,1,-20)}):Play()
+			task.wait(0.3) if notif then notif:Destroy() end
+		end
+	end)
+end
+
 -- ══ PREMIUM POPUP ══
 local function showPremiumPopup()
 	local popOverlay = Instance.new("Frame")
@@ -975,31 +1007,6 @@ local function showPremiumPopup()
 			task.wait(0.3)
 			showNotification("Discord Copied!", "Join the Discord server to purchase Premium keys and receive support.", 3)
 		end)
-	end)
-end
-
--- ══ NOTIFICATION SYSTEM ══
-function showNotification(title, message, duration)
-	duration = duration or 3
-	local notif = Instance.new("Frame")
-	notif.Size = UDim2.new(0, 260, 0, 0) notif.AutomaticSize = Enum.AutomaticSize.Y
-	notif.AnchorPoint = Vector2.new(1, 1)
-	notif.Position = UDim2.new(1, 320, 1, -20)
-	notif.BackgroundColor3 = Color3.fromRGB(18, 18, 24) notif.BorderSizePixel = 0 notif.ZIndex = 60
-	notif.Parent = gui
-	Instance.new("UICorner", notif).CornerRadius = UDim.new(0, 10)
-	local nStroke = Instance.new("UIStroke", notif) nStroke.Color = Color3.fromRGB(34, 197, 94) nStroke.Thickness = 1
-	local nLayout = Instance.new("UIListLayout", notif) nLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	local nPad = Instance.new("UIPadding", notif)
-	nPad.PaddingTop=UDim.new(0,12) nPad.PaddingBottom=UDim.new(0,12) nPad.PaddingLeft=UDim.new(0,14) nPad.PaddingRight=UDim.new(0,14)
-	local nt = Instance.new("TextLabel") nt.Size=UDim2.new(1,0,0,16) nt.BackgroundTransparency=1 nt.Text=title nt.TextColor3=Color3.fromRGB(34,197,94) nt.TextSize=13 nt.Font=Enum.Font.GothamBold nt.TextXAlignment=Enum.TextXAlignment.Left nt.LayoutOrder=1 nt.Parent=notif
-	local nm = Instance.new("TextLabel") nm.Size=UDim2.new(1,0,0,0) nm.AutomaticSize=Enum.AutomaticSize.Y nm.BackgroundTransparency=1 nm.Text=message nm.TextColor3=Color3.fromRGB(100,100,122) nm.TextSize=11 nm.Font=Enum.Font.Gotham nm.TextXAlignment=Enum.TextXAlignment.Left nm.TextWrapped=true nm.LayoutOrder=2 nm.Parent=notif
-	TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position=UDim2.new(1,-14,1,-20)}):Play()
-	task.delay(duration, function()
-		if notif and notif.Parent then
-			TweenService:Create(notif, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position=UDim2.new(1,320,1,-20)}):Play()
-			task.wait(0.3) if notif then notif:Destroy() end
-		end
 	end)
 end
 
