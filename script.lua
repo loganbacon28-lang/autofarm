@@ -355,16 +355,21 @@ gui.Parent = gethui()
 
 local main = Instance.new("Frame")
 main.Size = UDim2.new(0, 390, 0, 700)
-main.Position = UDim2.new(0, 12, 0.5, -350)
+main.Position = UDim2.new(0, 12, 0.5, -330)  -- starts 20px below final
 main.BackgroundColor3 = Color3.fromRGB(12, 12, 14)
 main.BorderSizePixel = 0
 main.Active = true
 main.Draggable = true
 main.Parent = gui
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 14)
-local mainStroke = Instance.new("UIStroke", main)
+do local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = Color3.fromRGB(32, 32, 38)
-mainStroke.Thickness = 1
+mainStroke.Thickness = 1 end
+-- Slide up + scroll fade in on open
+task.delay(0.05, function()
+	TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+		{Position = UDim2.new(0, 12, 0.5, -350)}):Play()
+end)
 
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 52)
@@ -516,11 +521,11 @@ local function getLicenseDisplay(secs)
 	if secs < 3600 then
 		return "🆓  Free Trial",    Color3.fromRGB(34, 197, 94),  false
 	elseif secs <= 86400 * 4 then
-		return "📅  3-Day",         Color3.fromRGB(80, 160, 220), true
+		return "📅  3-Day",         Color3.fromRGB(50, 200, 220), true
 	elseif secs <= 86400 * 8 then
-		return "👑  Weekly",        Color3.fromRGB(160, 80, 230), true
+		return "👑  Weekly",        Color3.fromRGB(255, 255, 255), true
 	elseif secs <= 86400 * 32 then
-		return "👑  Monthly",       Color3.fromRGB(212, 160, 40), true
+		return "👑  Monthly",       Color3.fromRGB(212, 175, 55), true
 	else
 		return "👑  Premium",       Color3.fromRGB(34, 197, 94),  true
 	end
@@ -550,7 +555,7 @@ local avCard = makeCard(1)
 
 -- Top row: avatar + name + status dot
 local avRow = Instance.new("Frame")
-avRow.Size = UDim2.new(1, 0, 0, 58)
+avRow.Size = UDim2.new(1, 0, 0, 70)
 avRow.BackgroundTransparency = 1
 avRow.LayoutOrder = 1
 avRow.Parent = avCard
@@ -563,8 +568,21 @@ avatarRing.BorderSizePixel = 0
 avatarRing.Parent = avRow
 Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
 avatarStroke = Instance.new("UIStroke", avatarRing)
-avatarStroke.Color = licColor
+avatarStroke.Color = Color3.fromRGB(55, 55, 70)  -- gray default, green when farming
 avatarStroke.Thickness = 2.5
+
+-- Glow ring behind avatar (invisible until farming active)
+local glowRing = Instance.new("Frame")
+glowRing.Size = UDim2.new(0, 62, 0, 62)
+glowRing.Position = UDim2.new(0, -7, 0.5, -31)
+glowRing.BackgroundColor3 = Color3.fromRGB(25, 190, 75)
+glowRing.BackgroundTransparency = 1
+glowRing.BorderSizePixel = 0
+glowRing.ZIndex = 0
+glowRing.Parent = avRow
+Instance.new("UICorner", glowRing).CornerRadius = UDim.new(1, 0)
+-- Store reference so UpdatePlayerStatus can animate it
+_G._atmFarmerGlowRing = glowRing
 local avatarImg = Instance.new("ImageLabel")
 avatarImg.Size = UDim2.new(1, 0, 1, 0)
 avatarImg.BackgroundTransparency = 1
@@ -588,7 +606,7 @@ dotOutline.Thickness = 2.5
 -- Welcome message
 local displayLbl = Instance.new("TextLabel")
 displayLbl.Size = UDim2.new(1, -58, 0, 16)
-displayLbl.Position = UDim2.new(0, 58, 0, 3)
+displayLbl.Position = UDim2.new(0, 58, 0, 9)  -- slides up to y=3
 displayLbl.BackgroundTransparency = 1
 displayLbl.Text = "Welcome, " .. player.DisplayName .. "!"
 displayLbl.TextColor3 = Color3.fromRGB(240, 240, 245)
@@ -608,9 +626,37 @@ tagLbl.Font = Enum.Font.Gotham
 tagLbl.TextXAlignment = Enum.TextXAlignment.Left
 tagLbl.Parent = avRow
 
+-- Premium / Free Trial status badge
+local tierStatusLbl = Instance.new("TextLabel")
+tierStatusLbl.Size = UDim2.new(1, -58, 0, 12)
+tierStatusLbl.Position = UDim2.new(0, 58, 0, 33)
+tierStatusLbl.BackgroundTransparency = 1
+tierStatusLbl.Text = IS_PREMIUM and "👑 Premium" or "🆓 Free Trial"
+tierStatusLbl.TextColor3 = IS_PREMIUM and Color3.fromRGB(212, 175, 55) or Color3.fromRGB(34, 197, 94)
+tierStatusLbl.TextSize = 10
+tierStatusLbl.Font = Enum.Font.GothamBold
+tierStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+tierStatusLbl.TextTransparency = 1  -- starts invisible
+tierStatusLbl.Parent = avRow
+
+-- Welcome fade-in animations
+displayLbl.TextTransparency = 1
+tagLbl.TextTransparency = 1
+task.delay(0.3, function()
+	TweenService:Create(displayLbl, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+	TweenService:Create(displayLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint),
+		{Position = UDim2.new(0, 58, 0, 3)}):Play()
+end)
+task.delay(0.45, function()
+	TweenService:Create(tagLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+end)
+task.delay(0.6, function()
+	TweenService:Create(tierStatusLbl, TweenInfo.new(0.4, Enum.EasingStyle.Quint), {TextTransparency = 0}):Play()
+end)
+
 statusTxt = Instance.new("TextLabel")
 statusTxt.Size = UDim2.new(1, -58, 0, 12)
-statusTxt.Position = UDim2.new(0, 58, 0, 33)
+statusTxt.Position = UDim2.new(0, 58, 0, 46)
 statusTxt.BackgroundTransparency = 1
 statusTxt.Text = "Idle — waiting to start"
 statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
@@ -755,23 +801,45 @@ paidLbl.Parent = avRow
 end -- ── end avatar card scope ── (all temp locals freed)
 
 local currentStatusState = "idle"
+local _glowPulseActive = false
 local function UpdatePlayerStatus(state, statusText)
 	if state ~= currentStatusState then
 		currentStatusState = state
-		local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local ti = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+		local glow = _G._atmFarmerGlowRing  -- glow ring created inside do block
+
 		if state == "active" then
+			-- Green ring + glow pulse
 			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(25, 190, 75)}):Play()
 			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(25, 190, 75)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(25, 190, 75)
+			-- Start glow pulse
+			_glowPulseActive = true
+			task.spawn(function()
+				while _glowPulseActive do
+					if glow then TweenService:Create(glow, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.55}):Play() end
+					task.wait(0.95)
+					if not _glowPulseActive then break end
+					if glow then TweenService:Create(glow, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.82}):Play() end
+					task.wait(0.95)
+				end
+				-- Fade glow out when stopped
+				if glow then TweenService:Create(glow, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play() end
+			end)
 		elseif state == "paused" then
-			TweenService:Create(avatarStroke, ti, {Color = licColor}):Play()
+			-- Stop glow, gray ring
+			_glowPulseActive = false
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
 			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
 		elseif state == "idle" then
-			TweenService:Create(avatarStroke, ti, {Color = licColor}):Play()
+			-- Stop glow, gray ring
+			_glowPulseActive = false
+			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
 			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
 		elseif state == "error" then
+			_glowPulseActive = false
 			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(210, 55, 55)}):Play()
 			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(210, 55, 55)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(210, 55, 55)
