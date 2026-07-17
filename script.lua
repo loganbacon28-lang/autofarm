@@ -494,27 +494,253 @@ local function makeDivider(parent, order)
 	local d = Instance.new("Frame") d.Size = UDim2.new(1, 0, 0, 1) d.BackgroundColor3 = Color3.fromRGB(28, 28, 36) d.BorderSizePixel = 0 d.LayoutOrder = order d.Parent = parent
 end
 
+-- ══ LICENSE DATA FROM KEY SYSTEM ══
+-- Read everything the key system stored before loading this script
+local licTierleft  = tonumber(getgenv and getgenv().LICENSE_TIMELEFT or 0) or 0
+local licExpiry    = tonumber(getgenv and getgenv().LICENSE_EXPIRY    or 0) or 0
+local licStatus    = (getgenv and getgenv().LICENSE_STATUS)  or "Active"
+local licTierRaw   = (getgenv and getgenv().USER_TIER)       or "trial"
+
+-- Auto-detect display label + color from time remaining
+local function getLicenseDisplay(secs)
+	if secs < 3600 then
+		return "🆓  Free Trial",    Color3.fromRGB(34, 197, 94),  false
+	elseif secs <= 86400 * 4 then
+		return "📅  3-Day",         Color3.fromRGB(80, 160, 220), true
+	elseif secs <= 86400 * 8 then
+		return "👑  Weekly",        Color3.fromRGB(160, 80, 230), true
+	elseif secs <= 86400 * 32 then
+		return "👑  Monthly",       Color3.fromRGB(212, 160, 40), true
+	else
+		return "👑  Premium",       Color3.fromRGB(34, 197, 94),  true
+	end
+end
+
+local function fmtCountdown(secs)
+	if secs <= 0 then return "Expired" end
+	local d = math.floor(secs / 86400)
+	local h = math.floor((secs % 86400) / 3600)
+	local m = math.floor((secs % 3600) / 60)
+	local s = secs % 60
+	if d > 0 then return d .. "d " .. h .. "h " .. m .. "m"
+	elseif h > 0 then return h .. "h " .. m .. "m " .. s .. "s"
+	else return m .. "m " .. s .. "s" end
+end
+
+local function fmtExpiry(ts)
+	if not ts or ts == 0 then return "Unknown" end
+	return os.date("%b %d, %Y  %I:%M %p", ts)
+end
+
+local licLabel, licColor, _ = getLicenseDisplay(licTierleft)
+local secondsLeft = licTierleft  -- live countdown tracker
+
 -- ══ AVATAR CARD ══
 local avCard = makeCard(1)
-local avRow = Instance.new("Frame") avRow.Size = UDim2.new(1, 0, 0, 58) avRow.BackgroundTransparency = 1 avRow.LayoutOrder = 1 avRow.Parent = avCard
 
-local avatarRing = Instance.new("Frame") avatarRing.Size = UDim2.new(0, 48, 0, 48) avatarRing.Position = UDim2.new(0, 0, 0.5, -24) avatarRing.BackgroundColor3 = Color3.fromRGB(20, 20, 24) avatarRing.BorderSizePixel = 0 avatarRing.Parent = avRow
+-- Top row: avatar + name + status dot
+local avRow = Instance.new("Frame")
+avRow.Size = UDim2.new(1, 0, 0, 58)
+avRow.BackgroundTransparency = 1
+avRow.LayoutOrder = 1
+avRow.Parent = avCard
+
+local avatarRing = Instance.new("Frame")
+avatarRing.Size = UDim2.new(0, 48, 0, 48)
+avatarRing.Position = UDim2.new(0, 0, 0.5, -24)
+avatarRing.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+avatarRing.BorderSizePixel = 0
+avatarRing.Parent = avRow
 Instance.new("UICorner", avatarRing).CornerRadius = UDim.new(1, 0)
-local avatarStroke = Instance.new("UIStroke", avatarRing) avatarStroke.Color = Color3.fromRGB(55, 55, 70) avatarStroke.Thickness = 2.5
-local avatarImg = Instance.new("ImageLabel") avatarImg.Size = UDim2.new(1, 0, 1, 0) avatarImg.BackgroundTransparency = 1 avatarImg.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png" avatarImg.ScaleType = Enum.ScaleType.Crop avatarImg.Parent = avatarRing
+local avatarStroke = Instance.new("UIStroke", avatarRing)
+avatarStroke.Color = licColor
+avatarStroke.Thickness = 2.5
+local avatarImg = Instance.new("ImageLabel")
+avatarImg.Size = UDim2.new(1, 0, 1, 0)
+avatarImg.BackgroundTransparency = 1
+avatarImg.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
+avatarImg.ScaleType = Enum.ScaleType.Crop
+avatarImg.Parent = avatarRing
 Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
 
-local statusDot = Instance.new("Frame") statusDot.Size = UDim2.new(0, 13, 0, 13) statusDot.Position = UDim2.new(0, 34, 0, 39) statusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70) statusDot.BorderSizePixel = 0 statusDot.ZIndex = 3 statusDot.Parent = avRow
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 13, 0, 13)
+statusDot.Position = UDim2.new(0, 34, 0, 39)
+statusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
+statusDot.BorderSizePixel = 0
+statusDot.ZIndex = 3
+statusDot.Parent = avRow
 Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
-local dotOutline = Instance.new("UIStroke", statusDot) dotOutline.Color = Color3.fromRGB(19, 19, 23) dotOutline.Thickness = 2.5
+local dotOutline = Instance.new("UIStroke", statusDot)
+dotOutline.Color = Color3.fromRGB(19, 19, 23)
+dotOutline.Thickness = 2.5
 
-local displayLbl = Instance.new("TextLabel") displayLbl.Size = UDim2.new(1, -58, 0, 16) displayLbl.Position = UDim2.new(0, 58, 0, 3) displayLbl.BackgroundTransparency = 1 displayLbl.Text = player.DisplayName displayLbl.TextColor3 = Color3.fromRGB(240, 240, 245) displayLbl.TextSize = 14 displayLbl.Font = Enum.Font.GothamBold displayLbl.TextXAlignment = Enum.TextXAlignment.Left displayLbl.Parent = avRow
+-- Welcome message
+local displayLbl = Instance.new("TextLabel")
+displayLbl.Size = UDim2.new(1, -58, 0, 16)
+displayLbl.Position = UDim2.new(0, 58, 0, 3)
+displayLbl.BackgroundTransparency = 1
+displayLbl.Text = "Welcome, " .. player.DisplayName .. "!"
+displayLbl.TextColor3 = Color3.fromRGB(240, 240, 245)
+displayLbl.TextSize = 13
+displayLbl.Font = Enum.Font.GothamBold
+displayLbl.TextXAlignment = Enum.TextXAlignment.Left
+displayLbl.Parent = avRow
 
-local tagLbl = Instance.new("TextLabel") tagLbl.Size = UDim2.new(1, -58, 0, 12) tagLbl.Position = UDim2.new(0, 58, 0, 20) tagLbl.BackgroundTransparency = 1 tagLbl.Text = "@" .. player.Name tagLbl.TextColor3 = Color3.fromRGB(58, 58, 76) tagLbl.TextSize = 10 tagLbl.Font = Enum.Font.Gotham tagLbl.TextXAlignment = Enum.TextXAlignment.Left tagLbl.Parent = avRow
+local tagLbl = Instance.new("TextLabel")
+tagLbl.Size = UDim2.new(1, -58, 0, 12)
+tagLbl.Position = UDim2.new(0, 58, 0, 20)
+tagLbl.BackgroundTransparency = 1
+tagLbl.Text = "@" .. player.Name
+tagLbl.TextColor3 = Color3.fromRGB(58, 58, 76)
+tagLbl.TextSize = 10
+tagLbl.Font = Enum.Font.Gotham
+tagLbl.TextXAlignment = Enum.TextXAlignment.Left
+tagLbl.Parent = avRow
 
-local paidLbl = Instance.new("TextLabel") paidLbl.Size = UDim2.new(1, -58, 0, 12) paidLbl.Position = UDim2.new(0, 58, 0, 32) paidLbl.BackgroundTransparency = 1 paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75) paidLbl.TextSize = 10 paidLbl.Font = Enum.Font.GothamBold paidLbl.TextXAlignment = Enum.TextXAlignment.Left paidLbl.Parent = avRow
+local statusTxt = Instance.new("TextLabel")
+statusTxt.Size = UDim2.new(1, -58, 0, 12)
+statusTxt.Position = UDim2.new(0, 58, 0, 33)
+statusTxt.BackgroundTransparency = 1
+statusTxt.Text = "Idle — waiting to start"
+statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
+statusTxt.TextSize = 10
+statusTxt.Font = Enum.Font.Gotham
+statusTxt.TextXAlignment = Enum.TextXAlignment.Left
+statusTxt.TextTruncate = Enum.TextTruncate.AtEnd
+statusTxt.Parent = avRow
 
-local statusTxt = Instance.new("TextLabel") statusTxt.Size = UDim2.new(1, -58, 0, 12) statusTxt.Position = UDim2.new(0, 58, 0, 44) statusTxt.BackgroundTransparency = 1 statusTxt.Text = "Idle — waiting to start" statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76) statusTxt.TextSize = 10 statusTxt.Font = Enum.Font.Gotham statusTxt.TextXAlignment = Enum.TextXAlignment.Left statusTxt.TextTruncate = Enum.TextTruncate.AtEnd statusTxt.Parent = avRow
+-- Divider between avatar row and license panel
+local avDiv = Instance.new("Frame")
+avDiv.Size = UDim2.new(1, 0, 0, 1)
+avDiv.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+avDiv.BorderSizePixel = 0
+avDiv.LayoutOrder = 2
+avDiv.Parent = avCard
+
+-- ── LICENSE INFO PANEL ────────────────────────────────────
+local licPanel = Instance.new("Frame")
+licPanel.Size = UDim2.new(1, 0, 0, 0)
+licPanel.AutomaticSize = Enum.AutomaticSize.Y
+licPanel.BackgroundTransparency = 1
+licPanel.LayoutOrder = 3
+licPanel.Parent = avCard
+
+local licPanelLayout = Instance.new("UIListLayout", licPanel)
+licPanelLayout.FillDirection = Enum.FillDirection.Horizontal
+licPanelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+licPanelLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Left: countdown + expiry
+local licLeft = Instance.new("Frame")
+licLeft.Size = UDim2.new(1, -90, 0, 0)
+licLeft.AutomaticSize = Enum.AutomaticSize.Y
+licLeft.BackgroundTransparency = 1
+licLeft.LayoutOrder = 1
+licLeft.Parent = licPanel
+local licLeftL = Instance.new("UIListLayout", licLeft)
+licLeftL.SortOrder = Enum.SortOrder.LayoutOrder
+licLeftL.Padding = UDim.new(0, 2)
+
+local countdownLbl = Instance.new("TextLabel")
+countdownLbl.Size = UDim2.new(1, 0, 0, 14)
+countdownLbl.BackgroundTransparency = 1
+countdownLbl.Text = "⏱  " .. fmtCountdown(secondsLeft) .. " remaining"
+countdownLbl.TextColor3 = licColor
+countdownLbl.TextSize = 11
+countdownLbl.Font = Enum.Font.GothamBold
+countdownLbl.TextXAlignment = Enum.TextXAlignment.Left
+countdownLbl.LayoutOrder = 1
+countdownLbl.Parent = licLeft
+
+local expiryLbl = Instance.new("TextLabel")
+expiryLbl.Size = UDim2.new(1, 0, 0, 13)
+expiryLbl.BackgroundTransparency = 1
+expiryLbl.Text = "Expires  " .. fmtExpiry(licExpiry)
+expiryLbl.TextColor3 = Color3.fromRGB(58, 58, 76)
+expiryLbl.TextSize = 9
+expiryLbl.Font = Enum.Font.Gotham
+expiryLbl.TextXAlignment = Enum.TextXAlignment.Left
+expiryLbl.LayoutOrder = 2
+expiryLbl.Parent = licLeft
+
+-- Right: tier badge
+local badgeWrap = Instance.new("Frame")
+badgeWrap.Size = UDim2.new(0, 88, 0, 0)
+badgeWrap.AutomaticSize = Enum.AutomaticSize.Y
+badgeWrap.BackgroundTransparency = 1
+badgeWrap.LayoutOrder = 2
+badgeWrap.Parent = licPanel
+local badgeWrapL = Instance.new("UIListLayout", badgeWrap)
+badgeWrapL.HorizontalAlignment = Enum.HorizontalAlignment.Right
+badgeWrapL.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local tierBadge = Instance.new("TextLabel")
+tierBadge.Size = UDim2.new(0, 80, 0, 22)
+tierBadge.BackgroundColor3 = Color3.new(
+	licColor.R * 0.12, licColor.G * 0.12, licColor.B * 0.12)
+tierBadge.BorderSizePixel = 0
+tierBadge.Text = licLabel
+tierBadge.TextColor3 = licColor
+tierBadge.TextSize = 10
+tierBadge.Font = Enum.Font.GothamBold
+tierBadge.TextXAlignment = Enum.TextXAlignment.Center
+tierBadge.LayoutOrder = 1
+tierBadge.Parent = badgeWrap
+local tierBadgeC = Instance.new("UICorner", tierBadge)
+tierBadgeC.CornerRadius = UDim.new(0, 6)
+local tierBadgeS = Instance.new("UIStroke", tierBadge)
+tierBadgeS.Color = licColor
+tierBadgeS.Thickness = 1
+
+local statusBadge = Instance.new("TextLabel")
+statusBadge.Size = UDim2.new(0, 80, 0, 16)
+statusBadge.BackgroundTransparency = 1
+statusBadge.Text = "● " .. licStatus
+statusBadge.TextColor3 = Color3.fromRGB(34, 197, 94)
+statusBadge.TextSize = 9
+statusBadge.Font = Enum.Font.GothamBold
+statusBadge.TextXAlignment = Enum.TextXAlignment.Right
+statusBadge.LayoutOrder = 2
+statusBadge.Parent = badgeWrap
+
+-- Padding inside the license panel
+local licPanelPad = Instance.new("UIPadding", licPanel)
+licPanelPad.PaddingTop = UDim.new(0, 8)
+licPanelPad.PaddingBottom = UDim.new(0, 4)
+
+-- ── LIVE COUNTDOWN ─────────────────────────────────────────
+-- Ticks every second, updates countdownLbl in real time.
+-- When the license expires mid-session, badge turns red.
+task.spawn(function()
+	while gui and gui.Parent do
+		task.wait(1)
+		secondsLeft = math.max(0, secondsLeft - 1)
+		if countdownLbl and countdownLbl.Parent then
+			if secondsLeft <= 0 then
+				countdownLbl.Text = "⏱  Expired"
+				countdownLbl.TextColor3 = Color3.fromRGB(210, 55, 55)
+				statusBadge.Text = "● Expired"
+				statusBadge.TextColor3 = Color3.fromRGB(210, 55, 55)
+				tierBadge.TextColor3 = Color3.fromRGB(210, 55, 55)
+			else
+				countdownLbl.Text = "⏱  " .. fmtCountdown(secondsLeft) .. " remaining"
+				-- Warning color in last 5 minutes
+				if secondsLeft <= 300 then
+					countdownLbl.TextColor3 = Color3.fromRGB(220, 160, 40)
+				end
+			end
+		end
+	end
+end)
+
+-- ══ PLAYER STATUS SYSTEM ══
+local paidLbl = Instance.new("TextLabel")  -- kept for UpdatePlayerStatus compat
+paidLbl.Size = UDim2.new(0, 0, 0, 0)
+paidLbl.BackgroundTransparency = 1
+paidLbl.Text = ""
+paidLbl.Visible = false
+paidLbl.Parent = avRow
 
 local currentStatusState = "idle"
 local function UpdatePlayerStatus(state, statusText)
@@ -523,22 +749,19 @@ local function UpdatePlayerStatus(state, statusText)
 		local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 		if state == "active" then
 			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(25, 190, 75)}):Play()
-			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(25, 190, 75)}):Play()
+			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(25, 190, 75)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(25, 190, 75)
-			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
 		elseif state == "paused" then
-			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
-			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
+			TweenService:Create(avatarStroke, ti, {Color = licColor}):Play()
+			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
-			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
 		elseif state == "idle" then
-			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(55, 55, 70)}):Play()
-			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
+			TweenService:Create(avatarStroke, ti, {Color = licColor}):Play()
+			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(55, 55, 70)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(58, 58, 76)
-			paidLbl.Text = "✓ Paid" paidLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
 		elseif state == "error" then
 			TweenService:Create(avatarStroke, ti, {Color = Color3.fromRGB(210, 55, 55)}):Play()
-			TweenService:Create(statusDot, ti, {BackgroundColor3 = Color3.fromRGB(210, 55, 55)}):Play()
+			TweenService:Create(statusDot,   ti, {BackgroundColor3 = Color3.fromRGB(210, 55, 55)}):Play()
 			statusTxt.TextColor3 = Color3.fromRGB(210, 55, 55)
 		end
 	end
