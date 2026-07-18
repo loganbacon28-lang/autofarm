@@ -49,6 +49,65 @@ getgenv().RADIUS_ENABLED = false
 getgenv().FAST_BREAK = false
 getgenv().HIDDEN_FARM = false
 
+-- ══ SETTINGS PERSISTENCE ══
+local CFG_KEY = "DHCAutoFarm_Settings_v1"
+local _cfg = {}
+
+local function cfgSave()
+	local ok, err = pcall(function()
+		local data = {
+			farmRunning    = getgenv().ATM_STARTED,
+			radiusEnabled  = getgenv().RADIUS_ENABLED,
+			fastBreak      = getgenv().FAST_BREAK,
+			hiddenFarm     = getgenv().HIDDEN_FARM,
+			webhookUrl     = getgenv().WEBHOOK_URL or "",
+			webhookEnabled = getgenv().WEBHOOK_ENABLED or false,
+			saveCpuEnabled = getgenv().SAVE_CPU_ENABLED or false,
+			saveCpuFPS     = getgenv().SAVE_CPU_FPS or 5,
+		}
+		writefile(CFG_KEY .. ".json",
+			'{"farmRunning":' .. (data.farmRunning and "true" or "false") ..
+			',"radiusEnabled":' .. (data.radiusEnabled and "true" or "false") ..
+			',"fastBreak":' .. (data.fastBreak and "true" or "false") ..
+			',"hiddenFarm":' .. (data.hiddenFarm and "true" or "false") ..
+			',"webhookEnabled":' .. (data.webhookEnabled and "true" or "false") ..
+			',"saveCpuEnabled":' .. (data.saveCpuEnabled and "true" or "false") ..
+			',"saveCpuFPS":' .. tostring(data.saveCpuFPS) ..
+			',"webhookUrl":"' .. (data.webhookUrl:gsub('"', '\\"')) .. '"' ..
+			'}')
+	end)
+	return ok
+end
+
+local function cfgLoad()
+	local ok, raw = pcall(readfile, CFG_KEY .. ".json")
+	if not ok or not raw or raw == "" then return nil end
+	local function jbool(key) return raw:match('"' .. key .. '":true') ~= nil end
+	local function jnum(key)  return tonumber(raw:match('"' .. key .. '":(%d+%.?%d*)')) end
+	local function jstr(key)  return raw:match('"' .. key .. '":"([^"]*)"') end
+	return {
+		farmRunning    = jbool("farmRunning"),
+		radiusEnabled  = jbool("radiusEnabled"),
+		fastBreak      = jbool("fastBreak"),
+		hiddenFarm     = jbool("hiddenFarm"),
+		webhookEnabled = jbool("webhookEnabled"),
+		saveCpuEnabled = jbool("saveCpuEnabled"),
+		saveCpuFPS     = jnum("saveCpuFPS") or 5,
+		webhookUrl     = jstr("webhookUrl") or "",
+	}
+end
+
+-- Load saved config immediately — UI reads from _cfg to restore state
+local _cfgLoaded = false
+_cfg = cfgLoad() or {}
+_cfgLoaded = (_cfg.saveCpuFPS ~= nil)
+
+-- Save CPU globals
+getgenv().SAVE_CPU_ENABLED = false
+getgenv().SAVE_CPU_FPS     = (_cfg.saveCpuFPS or 5)
+
+
+
 -- Set by key system before this script loads. trial = Free, 3day/weekly/monthly = Premium.
 local IS_PREMIUM = getgenv and getgenv().IS_PREMIUM == true or false
 local DISCORD_INVITE = "https://discord.gg/uCUSZeuM48"
@@ -1145,7 +1204,374 @@ ugBadge.TextXAlignment = Enum.TextXAlignment.Center ugBadge.ZIndex = 3
 ugBadge.Parent = hfTrack.Parent
 Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4) end
 
+
 makeSpacer(autoCard, 12, 3) makeDivider(autoCard, 13) makeSpacer(autoCard, 14, 3)
+
+-- ══ SAVE CPU ROW ══
+local cpuRowWrap = Instance.new("Frame")
+cpuRowWrap.Size = UDim2.new(1, 0, 0, 0)
+cpuRowWrap.AutomaticSize = Enum.AutomaticSize.Y
+cpuRowWrap.BackgroundTransparency = 1
+cpuRowWrap.LayoutOrder = 14
+cpuRowWrap.Parent = autoCard
+
+local cpuTitleRow = Instance.new("Frame")
+cpuTitleRow.Size = UDim2.new(1, 0, 0, 20)
+cpuTitleRow.BackgroundTransparency = 1
+cpuTitleRow.Parent = cpuRowWrap
+local cpuLayout = Instance.new("UIListLayout", cpuRowWrap)
+cpuLayout.SortOrder = Enum.SortOrder.LayoutOrder
+cpuLayout.Padding = UDim.new(0, 0)
+
+-- Title + FPS display label on the right
+local cpuTitleLbl = Instance.new("TextLabel")
+cpuTitleLbl.Size = UDim2.new(1, -120, 1, 0)
+cpuTitleLbl.BackgroundTransparency = 1
+cpuTitleLbl.Text = "Save CPU"
+cpuTitleLbl.TextColor3 = Color3.fromRGB(210, 210, 220)
+cpuTitleLbl.TextSize = 12
+cpuTitleLbl.Font = Enum.Font.GothamBold
+cpuTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+cpuTitleLbl.Parent = cpuTitleRow
+
+local cpuFpsLbl = Instance.new("TextLabel")
+cpuFpsLbl.Size = UDim2.new(0, 110, 1, 0)
+cpuFpsLbl.Position = UDim2.new(1, -110, 0, 0)
+cpuFpsLbl.BackgroundTransparency = 1
+cpuFpsLbl.Text = getgenv().SAVE_CPU_FPS .. " FPS"
+cpuFpsLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
+cpuFpsLbl.TextSize = 9
+cpuFpsLbl.Font = Enum.Font.GothamBold
+cpuFpsLbl.TextXAlignment = Enum.TextXAlignment.Right
+cpuFpsLbl.TextYAlignment = Enum.TextYAlignment.Center
+cpuFpsLbl.Parent = cpuTitleRow
+
+local cpuSubLbl = Instance.new("TextLabel")
+cpuSubLbl.Size = UDim2.new(1, 0, 0, 12)
+cpuSubLbl.BackgroundTransparency = 1
+cpuSubLbl.Text = "Reduces rendering while keeping auto farming running — OFF"
+cpuSubLbl.TextColor3 = Color3.fromRGB(58, 58, 75)
+cpuSubLbl.TextSize = 9
+cpuSubLbl.Font = Enum.Font.Gotham
+cpuSubLbl.TextXAlignment = Enum.TextXAlignment.Left
+cpuSubLbl.LayoutOrder = 2
+cpuSubLbl.Parent = cpuRowWrap
+
+local cpuToggleRow = Instance.new("Frame")
+cpuToggleRow.Size = UDim2.new(1, 0, 0, 28)
+cpuToggleRow.BackgroundTransparency = 1
+cpuToggleRow.LayoutOrder = 3
+cpuToggleRow.Parent = cpuRowWrap
+
+local cpuTrack = Instance.new("TextButton")
+cpuTrack.Size = UDim2.new(0, 42, 0, 22)
+cpuTrack.Position = UDim2.new(0, 0, 0.5, -11)
+cpuTrack.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+cpuTrack.Text = "" cpuTrack.BorderSizePixel = 0
+cpuTrack.Parent = cpuToggleRow
+Instance.new("UICorner", cpuTrack).CornerRadius = UDim.new(1, 0)
+local cpuThumb = Instance.new("Frame")
+cpuThumb.Size = UDim2.new(0, 16, 0, 16)
+cpuThumb.Position = UDim2.new(0, 3, 0.5, -8)
+cpuThumb.BackgroundColor3 = Color3.fromRGB(82, 82, 105)
+cpuThumb.BorderSizePixel = 0 cpuThumb.Parent = cpuTrack
+Instance.new("UICorner", cpuThumb).CornerRadius = UDim.new(1, 0)
+local cpuTogLbl = Instance.new("TextLabel")
+cpuTogLbl.Size = UDim2.new(1, -50, 1, 0)
+cpuTogLbl.Position = UDim2.new(0, 50, 0, 0)
+cpuTogLbl.BackgroundTransparency = 1
+cpuTogLbl.Text = "Enable Save CPU"
+cpuTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
+cpuTogLbl.TextSize = 10 cpuTogLbl.Font = Enum.Font.Gotham
+cpuTogLbl.TextXAlignment = Enum.TextXAlignment.Left
+cpuTogLbl.TextYAlignment = Enum.TextYAlignment.Center
+cpuTogLbl.Parent = cpuToggleRow
+
+-- ── Save CPU submenu (collapsed by default) ──
+local cpuSubmenu = Instance.new("Frame")
+cpuSubmenu.Size = UDim2.new(1, 0, 0, 0)
+cpuSubmenu.ClipsDescendants = true
+cpuSubmenu.BackgroundTransparency = 1
+cpuSubmenu.LayoutOrder = 4
+cpuSubmenu.Parent = cpuRowWrap
+
+local cpuSubInner = Instance.new("Frame")
+cpuSubInner.Size = UDim2.new(1, 0, 0, 0)
+cpuSubInner.AutomaticSize = Enum.AutomaticSize.Y
+cpuSubInner.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+cpuSubInner.BorderSizePixel = 0
+cpuSubInner.Parent = cpuSubmenu
+Instance.new("UICorner", cpuSubInner).CornerRadius = UDim.new(0, 8)
+local cpuSubStroke = Instance.new("UIStroke", cpuSubInner)
+cpuSubStroke.Color = Color3.fromRGB(32, 32, 44) cpuSubStroke.Thickness = 1
+local cpuSubLayout = Instance.new("UIListLayout", cpuSubInner)
+cpuSubLayout.SortOrder = Enum.SortOrder.LayoutOrder
+cpuSubLayout.Padding = UDim.new(0, 0)
+local cpuSubPad = Instance.new("UIPadding", cpuSubInner)
+cpuSubPad.PaddingTop = UDim.new(0, 10) cpuSubPad.PaddingBottom = UDim.new(0, 10)
+cpuSubPad.PaddingLeft = UDim.new(0, 12) cpuSubPad.PaddingRight = UDim.new(0, 12)
+
+-- FPS Limit row
+local fpsRow = Instance.new("Frame")
+fpsRow.Size = UDim2.new(1, 0, 0, 36)
+fpsRow.BackgroundTransparency = 1
+fpsRow.LayoutOrder = 1
+fpsRow.Parent = cpuSubInner
+
+local fpsLabelTxt = Instance.new("TextLabel")
+fpsLabelTxt.Size = UDim2.new(0.55, 0, 1, 0)
+fpsLabelTxt.BackgroundTransparency = 1
+fpsLabelTxt.Text = "FPS Limit"
+fpsLabelTxt.TextColor3 = Color3.fromRGB(180, 180, 195)
+fpsLabelTxt.TextSize = 11
+fpsLabelTxt.Font = Enum.Font.GothamBold
+fpsLabelTxt.TextXAlignment = Enum.TextXAlignment.Left
+fpsLabelTxt.TextYAlignment = Enum.TextYAlignment.Center
+fpsLabelTxt.Parent = fpsRow
+
+local fpsInputWrap = Instance.new("Frame")
+fpsInputWrap.Size = UDim2.new(0, 72, 0, 28)
+fpsInputWrap.Position = UDim2.new(1, -72, 0.5, -14)
+fpsInputWrap.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+fpsInputWrap.BorderSizePixel = 0
+fpsInputWrap.Parent = fpsRow
+Instance.new("UICorner", fpsInputWrap).CornerRadius = UDim.new(0, 7)
+local fpsInputStroke = Instance.new("UIStroke", fpsInputWrap)
+fpsInputStroke.Color = Color3.fromRGB(38, 38, 52) fpsInputStroke.Thickness = 1
+
+local fpsInput = Instance.new("TextBox")
+fpsInput.Size = UDim2.new(1, -10, 1, 0)
+fpsInput.Position = UDim2.new(0, 5, 0, 0)
+fpsInput.BackgroundTransparency = 1
+fpsInput.Text = tostring(getgenv().SAVE_CPU_FPS)
+fpsInput.PlaceholderText = "5"
+fpsInput.PlaceholderColor3 = Color3.fromRGB(52, 52, 68)
+fpsInput.TextColor3 = Color3.fromRGB(195, 195, 210)
+fpsInput.TextSize = 13 fpsInput.Font = Enum.Font.GothamBold
+fpsInput.TextXAlignment = Enum.TextXAlignment.Center
+fpsInput.TextYAlignment = Enum.TextYAlignment.Center
+fpsInput.ClearTextOnFocus = false
+fpsInput.Parent = fpsInputWrap
+
+fpsInput.Focused:Connect(function()
+	TweenService:Create(fpsInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(34, 120, 197), Thickness = 1.5}):Play()
+end)
+fpsInput.FocusLost:Connect(function()
+	TweenService:Create(fpsInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(38, 38, 52), Thickness = 1}):Play()
+	local v = math.clamp(tonumber(fpsInput.Text) or 5, 1, 240)
+	fpsInput.Text = tostring(v)
+	getgenv().SAVE_CPU_FPS = v
+	cpuFpsLbl.Text = v .. " FPS"
+	-- Apply new FPS cap immediately if Save CPU is active
+	if getgenv().SAVE_CPU_ENABLED then
+		setfpscap(v)
+	end
+end)
+
+local fpsHintLbl = Instance.new("TextLabel")
+fpsHintLbl.Size = UDim2.new(1, 0, 0, 12)
+fpsHintLbl.BackgroundTransparency = 1
+fpsHintLbl.Text = "Min: 1 FPS  |  Max: 240 FPS  |  Default: 5 FPS"
+fpsHintLbl.TextColor3 = Color3.fromRGB(46, 46, 60)
+fpsHintLbl.TextSize = 8 fpsHintLbl.Font = Enum.Font.Gotham
+fpsHintLbl.TextXAlignment = Enum.TextXAlignment.Left
+fpsHintLbl.LayoutOrder = 2
+fpsHintLbl.Parent = cpuSubInner
+
+-- ── Save CPU overlay (the near-blank screen shown when active) ──
+local cpuOverlay = Instance.new("CanvasGroup")
+cpuOverlay.Size = UDim2.new(1, 0, 1, 0)
+cpuOverlay.Position = UDim2.new(0, 0, 0, 0)
+cpuOverlay.BackgroundColor3 = Color3.fromRGB(6, 6, 7)
+cpuOverlay.GroupTransparency = 1
+cpuOverlay.ZIndex = 50
+cpuOverlay.Visible = false
+cpuOverlay.Parent = gui
+
+local cpuOverlayLayout = Instance.new("UIListLayout", cpuOverlay)
+cpuOverlayLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+cpuOverlayLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+cpuOverlayLayout.Padding = UDim.new(0, 6)
+
+-- Info card on the overlay
+local cpuInfoCard = Instance.new("Frame")
+cpuInfoCard.Size = UDim2.new(0, 300, 0, 0)
+cpuInfoCard.AutomaticSize = Enum.AutomaticSize.Y
+cpuInfoCard.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
+cpuInfoCard.BorderSizePixel = 0 cpuInfoCard.Parent = cpuOverlay
+Instance.new("UICorner", cpuInfoCard).CornerRadius = UDim.new(0, 14)
+local cpuCardStroke = Instance.new("UIStroke", cpuInfoCard)
+cpuCardStroke.Color = Color3.fromRGB(30, 30, 38) cpuCardStroke.Thickness = 1
+local cpuCardLayout = Instance.new("UIListLayout", cpuInfoCard)
+cpuCardLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+cpuCardLayout.Padding = UDim.new(0, 4)
+local cpuCardPad = Instance.new("UIPadding", cpuInfoCard)
+cpuCardPad.PaddingTop = UDim.new(0, 20) cpuCardPad.PaddingBottom = UDim.new(0, 20)
+cpuCardPad.PaddingLeft = UDim.new(0, 24) cpuCardPad.PaddingRight = UDim.new(0, 24)
+
+local cpuUserLbl = Instance.new("TextLabel")
+cpuUserLbl.Size = UDim2.new(1, 0, 0, 14)
+cpuUserLbl.BackgroundTransparency = 1
+cpuUserLbl.Text = player.Name
+cpuUserLbl.TextColor3 = Color3.fromRGB(72, 72, 88)
+cpuUserLbl.TextSize = 11 cpuUserLbl.Font = Enum.Font.Gotham
+cpuUserLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuUserLbl.Parent = cpuInfoCard
+
+local cpuEarnedLbl = Instance.new("TextLabel")
+cpuEarnedLbl.Size = UDim2.new(1, 0, 0, 36)
+cpuEarnedLbl.BackgroundTransparency = 1
+cpuEarnedLbl.Text = "$0"
+cpuEarnedLbl.TextColor3 = Color3.fromRGB(190, 190, 200)
+cpuEarnedLbl.TextSize = 28 cpuEarnedLbl.Font = Enum.Font.GothamBold
+cpuEarnedLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuEarnedLbl.Parent = cpuInfoCard
+
+local cpuPlusLbl = Instance.new("TextLabel")
+cpuPlusLbl.Size = UDim2.new(1, 0, 0, 14)
+cpuPlusLbl.BackgroundTransparency = 1
+cpuPlusLbl.Text = "+ $0"
+cpuPlusLbl.TextColor3 = Color3.fromRGB(52, 52, 68)
+cpuPlusLbl.TextSize = 12 cpuPlusLbl.Font = Enum.Font.Gotham
+cpuPlusLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuPlusLbl.Parent = cpuInfoCard
+
+local cpuTimeLbl = Instance.new("TextLabel")
+cpuTimeLbl.Size = UDim2.new(1, 0, 0, 30)
+cpuTimeLbl.BackgroundTransparency = 1
+cpuTimeLbl.Text = "00:00:00"
+cpuTimeLbl.TextColor3 = Color3.fromRGB(170, 170, 185)
+cpuTimeLbl.TextSize = 18 cpuTimeLbl.Font = Enum.Font.GothamBold
+cpuTimeLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuTimeLbl.Parent = cpuInfoCard
+
+local cpuActionLbl = Instance.new("TextLabel")
+cpuActionLbl.Size = UDim2.new(1, 0, 0, 14)
+cpuActionLbl.BackgroundTransparency = 1
+cpuActionLbl.Text = "breaking atm"
+cpuActionLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
+cpuActionLbl.TextSize = 10 cpuActionLbl.Font = Enum.Font.Gotham
+cpuActionLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuActionLbl.Parent = cpuInfoCard
+
+local cpuFooterLbl = Instance.new("TextLabel")
+cpuFooterLbl.Size = UDim2.new(1, 0, 0, 12)
+cpuFooterLbl.BackgroundTransparency = 1
+cpuFooterLbl.Text = "discord.gg/iku — @snuffing on discord"
+cpuFooterLbl.TextColor3 = Color3.fromRGB(36, 36, 48)
+cpuFooterLbl.TextSize = 9 cpuFooterLbl.Font = Enum.Font.Gotham
+cpuFooterLbl.TextXAlignment = Enum.TextXAlignment.Center
+cpuFooterLbl.Parent = cpuInfoCard
+
+-- ── Save CPU logic ──
+local _cpuHeartbeat = nil
+local _prevFpsCap = 60
+
+local function setLowGFX(enabled)
+	pcall(function()
+		game:GetService("ReplicatedStorage")
+			:WaitForChild("MainEvent")
+			:FireServer("UpdateSingleSetting", "LowGFX", enabled)
+	end)
+end
+
+local function formatTimeCPU(s)
+	return string.format("%02d:%02d:%02d", math.floor(s/3600), math.floor((s%3600)/60), s%60)
+end
+
+local function enterSaveCPU()
+	getgenv().SAVE_CPU_ENABLED = true
+	-- Fade main UI out
+	if main:IsA("CanvasGroup") then
+		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 1}):Play()
+	end
+	-- Show overlay
+	cpuOverlay.Visible = true
+	cpuOverlay.GroupTransparency = 1
+	TweenService:Create(cpuOverlay, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 0}):Play()
+	-- Apply FPS cap + Low GFX
+	_prevFpsCap = 60
+	pcall(function() _prevFpsCap = (getfpscap and getfpscap()) or 60 end)
+	pcall(function() setfpscap(getgenv().SAVE_CPU_FPS) end)
+	setLowGFX(true)
+	-- Overlay update loop
+	if _cpuHeartbeat then _cpuHeartbeat:Disconnect() end
+	local lastEarned = totalEarned
+	_cpuHeartbeat = RunService.Heartbeat:Connect(function()
+		pcall(function()
+			local elapsed = getElapsed()
+			local gained = totalEarned - lastEarned
+			cpuEarnedLbl.Text = formatMoney(totalEarned)
+			cpuPlusLbl.Text = "+ " .. formatMoney(gained)
+			cpuTimeLbl.Text = formatTimeCPU(elapsed)
+			cpuActionLbl.Text = currentAction:lower()
+		end)
+	end)
+end
+
+local function exitSaveCPU()
+	getgenv().SAVE_CPU_ENABLED = false
+	-- Fade overlay out
+	TweenService:Create(cpuOverlay, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 1}):Play()
+	task.delay(0.36, function() cpuOverlay.Visible = false end)
+	-- Restore main UI
+	if main:IsA("CanvasGroup") then
+		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 0}):Play()
+	end
+	-- Restore FPS + GFX
+	pcall(function() setfpscap(_prevFpsCap) end)
+	setLowGFX(false)
+	if _cpuHeartbeat then _cpuHeartbeat:Disconnect() _cpuHeartbeat = nil end
+end
+
+local function toggleCPU(on)
+	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	if on then
+		TweenService:Create(cpuTrack, ti, {BackgroundColor3 = Color3.fromRGB(22, 160, 60)}):Play()
+		TweenService:Create(cpuThumb, ti, {Position = UDim2.new(1, -19, 0.5, -8), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+		cpuTogLbl.Text = "Save CPU Active"
+		cpuTogLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		cpuSubLbl.Text = "Save CPU is ON — rendering reduced to " .. getgenv().SAVE_CPU_FPS .. " FPS"
+		cpuFpsLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		enterSaveCPU()
+		-- Collapse submenu
+		TweenService:Create(cpuSubmenu, TweenInfo.new(0.22, Enum.EasingStyle.Quint), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+	else
+		TweenService:Create(cpuTrack, ti, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
+		TweenService:Create(cpuThumb, ti, {Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = Color3.fromRGB(82, 82, 105)}):Play()
+		cpuTogLbl.Text = "Enable Save CPU"
+		cpuTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
+		cpuSubLbl.Text = "Reduces rendering while keeping auto farming running — OFF"
+		cpuFpsLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
+		exitSaveCPU()
+	end
+end
+
+-- Open/close submenu on title click
+local cpuSubmenuOpen = false
+cpuTitleRow.MouseButton1Click = nil  -- title isn't a button so we use a transparent overlay
+local cpuTitleBtn = Instance.new("TextButton")
+cpuTitleBtn.Size = UDim2.new(1, 0, 0, 20)
+cpuTitleBtn.BackgroundTransparency = 1
+cpuTitleBtn.Text = "" cpuTitleBtn.ZIndex = 5
+cpuTitleBtn.Parent = cpuTitleRow
+cpuTitleBtn.MouseButton1Click:Connect(function()
+	if getgenv().SAVE_CPU_ENABLED then return end
+	cpuSubmenuOpen = not cpuSubmenuOpen
+	local targetH = cpuSubmenuOpen and (cpuSubLayout.AbsoluteContentSize.Y + 24) or 0
+	TweenService:Create(cpuSubmenu, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+		{Size = UDim2.new(1, 0, 0, targetH)}):Play()
+end)
+
+cpuTrack.MouseButton1Click:Connect(function()
+	toggleCPU(not getgenv().SAVE_CPU_ENABLED)
+end)
+
+-- Store toggleCPU for settings restore
+getgenv()._toggleSaveCPU = toggleCPU
+
+
+makeSpacer(autoCard, 23, 3) makeDivider(autoCard, 24) makeSpacer(autoCard, 25, 3)
 
 -- ══ WEBHOOK SECTION ══
 do
@@ -1697,11 +2123,101 @@ local btnWrap = Instance.new("Frame") btnWrap.Size = UDim2.new(1, 0, 0, 44) btnW
 local toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
 
+
+-- ══ SAVE SETTINGS CARD ══
+local saveCard = makeCard(9)
+makeCardHeader(saveCard, 1, "💾", "Settings")
+makeSpacer(saveCard, 2, 8)
+
+local saveStatusLbl = Instance.new("TextLabel")
+saveStatusLbl.Size = UDim2.new(1, 0, 0, 12)
+saveStatusLbl.BackgroundTransparency = 1
+saveStatusLbl.Text = _cfgLoaded and "Loaded saved settings." or "No saved settings found."
+saveStatusLbl.TextColor3 = _cfgLoaded and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(58, 58, 75)
+saveStatusLbl.TextSize = 9 saveStatusLbl.Font = Enum.Font.Gotham
+saveStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
+saveStatusLbl.LayoutOrder = 3 saveStatusLbl.Parent = saveCard
+
+makeSpacer(saveCard, 4, 6)
+
+-- Save + Reset button row
+local saveBtnRow = Instance.new("Frame")
+saveBtnRow.Size = UDim2.new(1, 0, 0, 32)
+saveBtnRow.BackgroundTransparency = 1
+saveBtnRow.LayoutOrder = 5 saveBtnRow.Parent = saveCard
+local saveBtnLayout = Instance.new("UIListLayout", saveBtnRow)
+saveBtnLayout.FillDirection = Enum.FillDirection.Horizontal
+saveBtnLayout.Padding = UDim.new(0, 8)
+saveBtnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+local saveBtn = Instance.new("TextButton")
+saveBtn.Size = UDim2.new(0.6, -4, 1, 0)
+saveBtn.BackgroundColor3 = Color3.fromRGB(18, 60, 28)
+saveBtn.Text = "💾  Save Settings"
+saveBtn.TextColor3 = Color3.fromRGB(25, 190, 75)
+saveBtn.TextSize = 11 saveBtn.Font = Enum.Font.GothamBold
+saveBtn.BorderSizePixel = 0 saveBtn.Parent = saveBtnRow
+Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 8)
+local saveBtnStroke = Instance.new("UIStroke", saveBtn)
+saveBtnStroke.Color = Color3.fromRGB(22, 80, 38) saveBtnStroke.Thickness = 1
+
+local resetBtn = Instance.new("TextButton")
+resetBtn.Size = UDim2.new(0.4, -4, 1, 0)
+resetBtn.BackgroundColor3 = Color3.fromRGB(38, 14, 14)
+resetBtn.Text = "🗑  Reset"
+resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
+resetBtn.TextSize = 11 resetBtn.Font = Enum.Font.GothamBold
+resetBtn.BorderSizePixel = 0 resetBtn.Parent = saveBtnRow
+Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 8)
+local resetBtnStroke = Instance.new("UIStroke", resetBtn)
+resetBtnStroke.Color = Color3.fromRGB(70, 22, 22) resetBtnStroke.Thickness = 1
+
+makeSpacer(saveCard, 6, 4)
+
+saveBtn.MouseButton1Click:Connect(function()
+	local ok = cfgSave()
+	if ok then
+		saveStatusLbl.Text = "Settings saved successfully."
+		saveStatusLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+		saveBtn.Text = "✓  Saved!"
+		task.delay(2, function()
+			if saveBtn and saveBtn.Parent then saveBtn.Text = "💾  Save Settings" end
+		end)
+	else
+		saveStatusLbl.Text = "Failed to save settings."
+		saveStatusLbl.TextColor3 = Color3.fromRGB(210, 55, 55)
+	end
+end)
+
+local resetConfirm = false
+resetBtn.MouseButton1Click:Connect(function()
+	if not resetConfirm then
+		resetConfirm = true
+		resetBtn.Text = "Confirm?"
+		resetBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+		task.delay(3, function()
+			resetConfirm = false
+			if resetBtn and resetBtn.Parent then
+				resetBtn.Text = "🗑  Reset"
+				resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
+			end
+		end)
+	else
+		resetConfirm = false
+		pcall(function() delfile(CFG_KEY .. ".json") end)
+		saveStatusLbl.Text = "Settings reset to defaults."
+		saveStatusLbl.TextColor3 = Color3.fromRGB(180, 140, 40)
+		resetBtn.Text = "🗑  Reset"
+		resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
+	end
+end)
+
+
 -- ══ CREDITS ══
 local credWrap = Instance.new("Frame")
 credWrap.Size = UDim2.new(1, 0, 0, 26)
 credWrap.BackgroundTransparency = 1
-credWrap.LayoutOrder = 8
+credWrap.LayoutOrder = 10
 credWrap.Parent = scroll
 local credLayout = Instance.new("UIListLayout", credWrap)
 credLayout.FillDirection = Enum.FillDirection.Horizontal
@@ -2225,5 +2741,57 @@ do
 	local _origClose = closeBtn.MouseButton1Click
 	closeBtn.MouseButton1Click:Connect(function()
 		sendSessionSummary("Menu Closed")
+	end)
+end
+
+-- ══ RESTORE SAVED SETTINGS ══
+-- Runs after full UI is built — applies every saved value silently with no flicker.
+if _cfgLoaded then
+	task.spawn(function()
+		task.wait(0.1)  -- Let UI finish parenting to gui
+
+		-- Restore webhook URL
+		if _cfg.webhookUrl and _cfg.webhookUrl ~= "" then
+			whInput.Text = _cfg.webhookUrl
+			getgenv().WEBHOOK_URL = _cfg.webhookUrl
+			validateUrl()
+		end
+
+		-- Restore webhook toggle
+		if _cfg.webhookEnabled then
+			setWebhookToggle(true)
+		end
+
+		-- Restore ATM Radius
+		if _cfg.radiusEnabled and IS_PREMIUM then
+			pcall(function() radTrack:GetPropertyChangedSignal("Active"):Wait() end)
+			setRadiusToggle(true)
+		end
+
+		-- Restore Fast Break
+		if _cfg.fastBreak and IS_PREMIUM then
+			setFastBreakToggle(true)
+		end
+
+		-- Restore Underground Mode
+		if _cfg.hiddenFarm and IS_PREMIUM then
+			setHiddenFarmToggle(true)
+		end
+
+		-- Restore Save CPU
+		if _cfg.saveCpuEnabled then
+			getgenv().SAVE_CPU_FPS = _cfg.saveCpuFPS or 5
+			fpsInput.Text = tostring(getgenv().SAVE_CPU_FPS)
+			cpuFpsLbl.Text = getgenv().SAVE_CPU_FPS .. " FPS"
+			local fn = getgenv()._toggleSaveCPU
+			if fn then fn(true) end
+		end
+
+		-- Restore Auto Farm last (after everything else is ready)
+		if _cfg.farmRunning then
+			task.wait(0.3)
+			toggleBtn:GetPropertyChangedSignal("Text"):Wait()
+			toggleBtn.MouseButton1Click:Fire()
+		end
 	end)
 end
