@@ -1869,29 +1869,22 @@ task.spawn(function()
 		if #toPickup == 0 then continue end
 		table.sort(toPickup, function(a, b) return a.dist < b.dist end)
 		isPickingUp = true
-		local snapPos = activeATMPos  -- snapshot so mid-loop changes don't confuse us
+		local snapPos = activeATMPos
+		local cHRP = getHRP() if not cHRP then isPickingUp = false continue end
 		for _, entry in ipairs(toPickup) do
 			if not snapPos or not getgenv().ATM_RUNNING then break end
 			if not entry.drop.Parent then continue end
 			local dv = getDropValue(entry.drop)
-			local pos = entry.drop:IsA("BasePart") and entry.drop.Position or (entry.drop.PrimaryPart and entry.drop.PrimaryPart.Position)
-			if not pos then continue end
-			local cHRP = getHRP() if not cHRP then break end
-			pcall(function() cHRP.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
-			task.wait(0.04)
+			-- Radius mode: NEVER move the character. Fire interaction from current position.
 			if not entry.drop.Parent then continue end
 			local cd3 = entry.drop:FindFirstChildOfClass("ClickDetector")
 			if cd3 then fireclickdetector(cd3, 0, "MouseClick")
 			else firetouchinterest(cHRP, entry.drop, true) task.wait(0.02) firetouchinterest(cHRP, entry.drop, false) end
 			if dv > 0 then totalEarned += dv end
 			dropsCollected += 1
-			task.wait(0.04)
+			task.wait(0.03)
 		end
-		-- Return to ATM position only if we're still on the same ATM
-		local fHRP = getHRP()
-		if lastATMCFrame and fHRP and activeATMPos == snapPos then
-			pcall(function() fHRP.CFrame = lastATMCFrame end)
-		end
+		-- Character stays at ATM — no return teleport needed since we never left
 		isPickingUp = false
 	end
 end)
