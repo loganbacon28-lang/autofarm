@@ -1112,6 +1112,11 @@ local function onCharacterAdded(newChar)
 end
 player.CharacterAdded:Connect(onCharacterAdded)
 
+-- ══ PRE-DECLARE: UI locals that cross do..end boundaries ══
+local earningsBig, runtimeLbl, earnRateLbl
+local punchVal, dropsVal, skippedVal, earnRateVal
+local actionLbl, toggleBtn
+
 -- ══ PRE-DECLARE: live scanner values ══
 local atmAvailVal, atmBrokenVal, detScanLbl
 local vaultOpenVal, vaultClosedVal, vaultScanLbl
@@ -1153,6 +1158,7 @@ vaultClosedVal = makeDetBox(vaultGrid, 2, Color3.fromRGB(30,13,13), 775054601232
 end -- ── end detection + vault scope ──
 
 -- ══ AUTOMATION CARD ══
+do
 local autoCard = makeCard(4)
 makeCardHeader(autoCard, 1, 121618404766337, "Automation", true)
 makeSpacer(autoCard, 2, 9)
@@ -1948,6 +1954,8 @@ local function setHiddenFarmToggle(on)
 	end
 end
 
+end -- shopbuy scope
+
 -- ══ NOTIFICATION SYSTEM ══
 -- Declared first so showPremiumPopup can safely call it
 local function showNotification(title, message, duration)
@@ -2099,9 +2107,9 @@ Instance.new("UICorner", earnCell).CornerRadius = UDim.new(0, 7)
 Instance.new("UIStroke", earnCell).Color = Color3.fromRGB(26, 26, 33)
 
 local earnLblT = Instance.new("TextLabel") earnLblT.Size = UDim2.new(0.5, 0, 0, 11) earnLblT.Position = UDim2.new(0, 7, 0, 5) earnLblT.BackgroundTransparency = 1 earnLblT.Text = "Total Earned" earnLblT.TextColor3 = Color3.fromRGB(58,58,76) earnLblT.TextSize = 9 earnLblT.Font = Enum.Font.Gotham earnLblT.TextXAlignment = Enum.TextXAlignment.Left earnLblT.Parent = earnCell
-local earningsBig = Instance.new("TextLabel") earningsBig.Size = UDim2.new(0.5, 0, 0, 20) earningsBig.Position = UDim2.new(0, 7, 0, 18) earningsBig.BackgroundTransparency = 1 earningsBig.Text = "$0" earningsBig.TextColor3 = Color3.fromRGB(25,190,75) earningsBig.TextSize = 15 earningsBig.Font = Enum.Font.GothamBold earningsBig.TextXAlignment = Enum.TextXAlignment.Left earningsBig.Parent = earnCell
-local runtimeLbl = Instance.new("TextLabel") runtimeLbl.Size = UDim2.new(0.5, -7, 0, 11) runtimeLbl.Position = UDim2.new(0.5, 0, 0, 5) runtimeLbl.BackgroundTransparency = 1 runtimeLbl.Text = "Not started" runtimeLbl.TextColor3 = Color3.fromRGB(58,58,76) runtimeLbl.TextSize = 9 runtimeLbl.Font = Enum.Font.Gotham runtimeLbl.TextXAlignment = Enum.TextXAlignment.Right runtimeLbl.Parent = earnCell
-local earnRateLbl = Instance.new("TextLabel") earnRateLbl.Size = UDim2.new(0.5, -7, 0, 20) earnRateLbl.Position = UDim2.new(0.5, 0, 0, 18) earnRateLbl.BackgroundTransparency = 1 earnRateLbl.Text = "$0/min" earnRateLbl.TextColor3 = Color3.fromRGB(58,58,76) earnRateLbl.TextSize = 11 earnRateLbl.Font = Enum.Font.GothamBold earnRateLbl.TextXAlignment = Enum.TextXAlignment.Right earnRateLbl.Parent = earnCell
+earningsBig = Instance.new("TextLabel") earningsBig.Size = UDim2.new(0.5, 0, 0, 20) earningsBig.Position = UDim2.new(0, 7, 0, 18) earningsBig.BackgroundTransparency = 1 earningsBig.Text = "$0" earningsBig.TextColor3 = Color3.fromRGB(25,190,75) earningsBig.TextSize = 15 earningsBig.Font = Enum.Font.GothamBold earningsBig.TextXAlignment = Enum.TextXAlignment.Left earningsBig.Parent = earnCell
+runtimeLbl = Instance.new("TextLabel") runtimeLbl.Size = UDim2.new(0.5, -7, 0, 11) runtimeLbl.Position = UDim2.new(0.5, 0, 0, 5) runtimeLbl.BackgroundTransparency = 1 runtimeLbl.Text = "Not started" runtimeLbl.TextColor3 = Color3.fromRGB(58,58,76) runtimeLbl.TextSize = 9 runtimeLbl.Font = Enum.Font.Gotham runtimeLbl.TextXAlignment = Enum.TextXAlignment.Right runtimeLbl.Parent = earnCell
+earnRateLbl = Instance.new("TextLabel") earnRateLbl.Size = UDim2.new(0.5, -7, 0, 20) earnRateLbl.Position = UDim2.new(0.5, 0, 0, 18) earnRateLbl.BackgroundTransparency = 1 earnRateLbl.Text = "$0/min" earnRateLbl.TextColor3 = Color3.fromRGB(58,58,76) earnRateLbl.TextSize = 11 earnRateLbl.Font = Enum.Font.GothamBold earnRateLbl.TextXAlignment = Enum.TextXAlignment.Right earnRateLbl.Parent = earnCell
 
 makeSpacer(statsCard, 4, 6)
 local statsGrid = Instance.new("Frame") statsGrid.Size = UDim2.new(1, 0, 0, 74) statsGrid.BackgroundTransparency = 1 statsGrid.LayoutOrder = 5 statsGrid.Parent = statsCard
@@ -2115,20 +2123,20 @@ local function makeStatCell(order, label)
 	return vL
 end
 
-local punchVal    = makeStatCell(1, "Total Punches")
-local dropsVal    = makeStatCell(2, "Drops Collected")
-local skippedVal  = makeStatCell(3, "ATMs Skipped")
-local earnRateVal = makeStatCell(4, "Earn Rate")
+punchVal    = makeStatCell(1, "Total Punches")
+dropsVal    = makeStatCell(2, "Drops Collected")
+skippedVal  = makeStatCell(3, "ATMs Skipped")
+earnRateVal = makeStatCell(4, "Earn Rate")
 earnRateVal.TextColor3 = Color3.fromRGB(25, 190, 75)
 end -- stats scope
 
 local actionCard = makeCard(6)
 makeCardHeader(actionCard, 1, "▶", "Current Action")
 makeSpacer(actionCard, 2, 5)
-local actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 13) actionLbl.BackgroundTransparency = 1 actionLbl.Text = "Press Start to begin farming." actionLbl.TextColor3 = Color3.fromRGB(88,88,112) actionLbl.TextSize = 10 actionLbl.Font = Enum.Font.Gotham actionLbl.TextXAlignment = Enum.TextXAlignment.Left actionLbl.TextTruncate = Enum.TextTruncate.AtEnd actionLbl.LayoutOrder = 3 actionLbl.Parent = actionCard
+actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 13) actionLbl.BackgroundTransparency = 1 actionLbl.Text = "Press Start to begin farming." actionLbl.TextColor3 = Color3.fromRGB(88,88,112) actionLbl.TextSize = 10 actionLbl.Font = Enum.Font.Gotham actionLbl.TextXAlignment = Enum.TextXAlignment.Left actionLbl.TextTruncate = Enum.TextTruncate.AtEnd actionLbl.LayoutOrder = 3 actionLbl.Parent = actionCard
 
 local btnWrap = Instance.new("Frame") btnWrap.Size = UDim2.new(1, 0, 0, 44) btnWrap.BackgroundTransparency = 1 btnWrap.LayoutOrder = 7 btnWrap.Parent = scroll
-local toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
+toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
 
 
@@ -2221,8 +2229,10 @@ resetBtn.MouseButton1Click:Connect(function()
 	end
 end)
 end -- save settings scope
+end -- automation+webhook+savecpu scope
 
 -- ══ CREDITS ══
+do
 local credWrap = Instance.new("Frame")
 credWrap.Size = UDim2.new(1, 0, 0, 26)
 credWrap.BackgroundTransparency = 1
@@ -2285,8 +2295,10 @@ credLink.MouseButton1Click:Connect(function()
 	end)
 end)
 
+end -- credits scope
 
 -- ══ SHOP WINDOW ══
+do
 local shopWindow = Instance.new("Frame") shopWindow.Size = UDim2.new(0,265,0,330) shopWindow.Position = UDim2.new(0,410,0.5,-165) shopWindow.BackgroundColor3 = Color3.fromRGB(12,12,14) shopWindow.BorderSizePixel = 0 shopWindow.Active = true shopWindow.Draggable = true shopWindow.Visible = false shopWindow.Parent = gui
 Instance.new("UICorner", shopWindow).CornerRadius = UDim.new(0, 14) Instance.new("UIStroke", shopWindow).Color = Color3.fromRGB(32,32,38)
 local sWH = Instance.new("Frame") sWH.Size = UDim2.new(1,0,0,46) sWH.BackgroundColor3 = Color3.fromRGB(16,16,19) sWH.BorderSizePixel = 0 sWH.Parent = shopWindow
@@ -2299,6 +2311,7 @@ Instance.new("UICorner", sWC).CornerRadius = UDim.new(0, 7) Instance.new("UIStro
 sWC.MouseButton1Click:Connect(function() shopWindow.Visible = false end)
 shopOpenBtn.MouseButton1Click:Connect(function() shopWindow.Visible = not shopWindow.Visible end)
 
+do
 local shopStatusLbl = Instance.new("TextLabel") shopStatusLbl.Size = UDim2.new(1,-20,0,12) shopStatusLbl.Position = UDim2.new(0,10,0,50) shopStatusLbl.BackgroundTransparency = 1 shopStatusLbl.Text = "Select an item to purchase" shopStatusLbl.TextColor3 = Color3.fromRGB(64,64,82) shopStatusLbl.TextSize = 9 shopStatusLbl.Font = Enum.Font.Gotham shopStatusLbl.TextXAlignment = Enum.TextXAlignment.Left shopStatusLbl.Parent = shopWindow
 
 local function makeShopRow(yPos, icon, label, price, btnColor)
