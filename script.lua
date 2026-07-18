@@ -583,7 +583,6 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 
 	local function enterCPU()
 		getgenv().SAVE_CPU_ENABLED=true
-		if main:IsA("CanvasGroup") then TweenService:Create(main,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=1}):Play() end
 		ov.Visible=true ov.GroupTransparency=1 TweenService:Create(ov,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=0}):Play()
 		_prevFPS=60 pcall(function() _prevFPS=getfpscap() end) pcall(function() setfpscap(getgenv().SAVE_CPU_FPS) end) setLGFX(true)
 		baseEarned=totalEarned
@@ -597,7 +596,6 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 		getgenv().SAVE_CPU_ENABLED=false
 		TweenService:Create(ov,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=1}):Play()
 		task.delay(0.36,function() ov.Visible=false end)
-		if main:IsA("CanvasGroup") then TweenService:Create(main,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=0}):Play() end
 		pcall(function() setfpscap(_prevFPS) end) setLGFX(false)
 		if _cpuHB then _cpuHB:Disconnect() _cpuHB=nil end
 	end
