@@ -1954,8 +1954,6 @@ local function setHiddenFarmToggle(on)
 	end
 end
 
-end -- shopbuy scope
-
 -- ══ NOTIFICATION SYSTEM ══
 -- Declared first so showPremiumPopup can safely call it
 local function showNotification(title, message, duration)
@@ -2310,6 +2308,7 @@ local sWC = Instance.new("TextButton") sWC.Size = UDim2.new(0,26,0,26) sWC.Posit
 Instance.new("UICorner", sWC).CornerRadius = UDim.new(0, 7) Instance.new("UIStroke", sWC).Color = Color3.fromRGB(34,34,44)
 sWC.MouseButton1Click:Connect(function() shopWindow.Visible = false end)
 shopOpenBtn.MouseButton1Click:Connect(function() shopWindow.Visible = not shopWindow.Visible end)
+end -- shop toggle scope
 
 do
 local shopStatusLbl = Instance.new("TextLabel") shopStatusLbl.Size = UDim2.new(1,-20,0,12) shopStatusLbl.Position = UDim2.new(0,10,0,50) shopStatusLbl.BackgroundTransparency = 1 shopStatusLbl.Text = "Select an item to purchase" shopStatusLbl.TextColor3 = Color3.fromRGB(64,64,82) shopStatusLbl.TextSize = 9 shopStatusLbl.Font = Enum.Font.Gotham shopStatusLbl.TextXAlignment = Enum.TextXAlignment.Left shopStatusLbl.Parent = shopWindow
@@ -2365,6 +2364,7 @@ for btn, data in pairs(SHOP_ITEMS) do
 	local cb, cd2 = btn, data
 	cb.MouseButton1Click:Connect(function() task.spawn(function() buyItem(cb, cd2.name, cd2.label) end) end)
 end
+end -- shopbuy scope
 
 -- ══ LIVE SCANNER ══
 task.spawn(function()
