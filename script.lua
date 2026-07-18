@@ -49,65 +49,6 @@ getgenv().RADIUS_ENABLED = false
 getgenv().FAST_BREAK = false
 getgenv().HIDDEN_FARM = false
 
--- ══ SETTINGS PERSISTENCE ══
-local CFG_KEY = "DHCAutoFarm_Settings_v1"
-local _cfg = {}
-
-local function cfgSave()
-	local ok, err = pcall(function()
-		local data = {
-			farmRunning    = getgenv().ATM_STARTED,
-			radiusEnabled  = getgenv().RADIUS_ENABLED,
-			fastBreak      = getgenv().FAST_BREAK,
-			hiddenFarm     = getgenv().HIDDEN_FARM,
-			webhookUrl     = getgenv().WEBHOOK_URL or "",
-			webhookEnabled = getgenv().WEBHOOK_ENABLED or false,
-			saveCpuEnabled = getgenv().SAVE_CPU_ENABLED or false,
-			saveCpuFPS     = getgenv().SAVE_CPU_FPS or 5,
-		}
-		writefile(CFG_KEY .. ".json",
-			'{"farmRunning":' .. (data.farmRunning and "true" or "false") ..
-			',"radiusEnabled":' .. (data.radiusEnabled and "true" or "false") ..
-			',"fastBreak":' .. (data.fastBreak and "true" or "false") ..
-			',"hiddenFarm":' .. (data.hiddenFarm and "true" or "false") ..
-			',"webhookEnabled":' .. (data.webhookEnabled and "true" or "false") ..
-			',"saveCpuEnabled":' .. (data.saveCpuEnabled and "true" or "false") ..
-			',"saveCpuFPS":' .. tostring(data.saveCpuFPS) ..
-			',"webhookUrl":"' .. (data.webhookUrl:gsub('"', '\\"')) .. '"' ..
-			'}')
-	end)
-	return ok
-end
-
-local function cfgLoad()
-	local ok, raw = pcall(readfile, CFG_KEY .. ".json")
-	if not ok or not raw or raw == "" then return nil end
-	local function jbool(key) return raw:match('"' .. key .. '":true') ~= nil end
-	local function jnum(key)  return tonumber(raw:match('"' .. key .. '":(%d+%.?%d*)')) end
-	local function jstr(key)  return raw:match('"' .. key .. '":"([^"]*)"') end
-	return {
-		farmRunning    = jbool("farmRunning"),
-		radiusEnabled  = jbool("radiusEnabled"),
-		fastBreak      = jbool("fastBreak"),
-		hiddenFarm     = jbool("hiddenFarm"),
-		webhookEnabled = jbool("webhookEnabled"),
-		saveCpuEnabled = jbool("saveCpuEnabled"),
-		saveCpuFPS     = jnum("saveCpuFPS") or 5,
-		webhookUrl     = jstr("webhookUrl") or "",
-	}
-end
-
--- Load saved config immediately — UI reads from _cfg to restore state
-local _cfgLoaded = false
-_cfg = cfgLoad() or {}
-_cfgLoaded = (_cfg.saveCpuFPS ~= nil)
-
--- Save CPU globals
-getgenv().SAVE_CPU_ENABLED = false
-getgenv().SAVE_CPU_FPS     = (_cfg.saveCpuFPS or 5)
-
-
-
 -- Set by key system before this script loads. trial = Free, 3day/weekly/monthly = Premium.
 local IS_PREMIUM = getgenv and getgenv().IS_PREMIUM == true or false
 local DISCORD_INVITE = "https://discord.gg/uCUSZeuM48"
@@ -297,19 +238,15 @@ local function safeTeleport(cframe)
 	pcall(function() hrp.CFrame = cframe end)
 end
 
--- skipTeleport: pass true when the caller has already moved the character to the drop
--- (e.g. the radius scan loop). Prevents a second unwanted teleport.
-local function pickupDrop(drop, skipTeleport)
+local function pickupDrop(drop)
 	if not drop or not drop.Parent then return end
 	local hrp = getHRP()
 	if not hrp then return end
 	local dropValue = getDropValue(drop)
 	local pos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
 	if not pos then return end
-	if not skipTeleport then
-		pcall(function() hrp.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
-		task.wait(0.03)
-	end
+	pcall(function() hrp.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
+	task.wait(0.03)
 	if not drop.Parent then return end
 	local cd = drop:FindFirstChildOfClass("ClickDetector")
 	if cd then fireclickdetector(cd, 0, "MouseClick")
@@ -408,6 +345,361 @@ if radiusPaintSignal then
 end
 
 -- ══════════════════════════════════════
+
+-- ══ GLOBALS FOR CROSS-FUNCTION ACCESS ══
+getgenv().WEBHOOK_ENABLED = false
+getgenv().WEBHOOK_URL     = ""
+getgenv().SAVE_CPU_ENABLED = false
+getgenv().SAVE_CPU_FPS    = 5
+getgenv().RADIUS_ENABLED  = false
+getgenv().FAST_BREAK      = false
+getgenv().HIDDEN_FARM     = false
+
+-- ══ SETTINGS PERSISTENCE ══
+local CFG_KEY = "DHCAutoFarm_Settings_v1"
+local _cfg = {}
+local _cfgLoaded = false
+
+local function cfgSave()
+	local ok = pcall(function()
+		writefile(CFG_KEY..".json",
+			'{"radiusEnabled":'  ..(getgenv().RADIUS_ENABLED  and"true"or"false")
+			..',"fastBreak":'    ..(getgenv().FAST_BREAK       and"true"or"false")
+			..',"hiddenFarm":'   ..(getgenv().HIDDEN_FARM      and"true"or"false")
+			..',"webhookEnabled":'  ..(getgenv().WEBHOOK_ENABLED and"true"or"false")
+			..',"saveCpuEnabled":' ..(getgenv().SAVE_CPU_ENABLED and"true"or"false")
+			..',"saveCpuFPS":'   ..tostring(getgenv().SAVE_CPU_FPS)
+			..',"farmRunning":'  ..(getgenv().ATM_STARTED      and"true"or"false")
+			..',"webhookUrl":"'  ..(getgenv().WEBHOOK_URL or ""):gsub('"','\\"')..'"'
+			..'}')
+	end)
+	return ok
+end
+
+local function cfgLoad()
+	local ok, raw = pcall(readfile, CFG_KEY..".json")
+	if not ok or not raw or raw=="" then return nil end
+	local function jb(k) return raw:match('"'..k..'":true')~=nil end
+	local function jn(k) return tonumber(raw:match('"'..k..'":(%d+%.?%d*)')) end
+	local function js(k) return raw:match('"'..k..'":"([^"]*)"') end
+	return {
+		radiusEnabled=jb"radiusEnabled", fastBreak=jb"fastBreak",
+		hiddenFarm=jb"hiddenFarm", webhookEnabled=jb"webhookEnabled",
+		saveCpuEnabled=jb"saveCpuEnabled", farmRunning=jb"farmRunning",
+		saveCpuFPS=jn"saveCpuFPS" or 5, webhookUrl=js"webhookUrl" or "",
+	}
+end
+
+_cfg = cfgLoad() or {}
+_cfgLoaded = _cfg.saveCpuFPS ~= nil
+getgenv().SAVE_CPU_FPS = _cfg.saveCpuFPS or 5
+
+-- ══ AVATAR URL CACHE ══
+local _cachedAvatarUrl = nil
+local function resolveAvatarUrl()
+	if _cachedAvatarUrl then return _cachedAvatarUrl end
+	local apiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds="..player.UserId.."&size=420x420&format=Png&isCircular=false"
+	local ok, result = pcall(function()
+		local req = (syn and syn.request) or (http and http.request) or request
+		return req({Url=apiUrl,Method="GET"})
+	end)
+	if ok and result and result.Body then
+		local u = result.Body:match('"imageUrl":"(https://[^"]+)"')
+		if u then _cachedAvatarUrl=u return u end
+	end
+	return "https://www.roblox.com/headshot-thumbnail/image?userId="..player.UserId.."&width=420&height=420&format=png"
+end
+task.spawn(resolveAvatarUrl)
+
+-- ══ WEBHOOK SYSTEM ══
+local _whInput, _whStatusDot, _whStatusTxt, _whInputStroke
+local _validateUrl, _setWebhookToggle
+
+local function buildWebhookUI(autoCard, makeSpacer)
+	-- Header
+	local whHdr = Instance.new("Frame") whHdr.Size=UDim2.new(1,0,0,18) whHdr.BackgroundTransparency=1 whHdr.LayoutOrder=15 whHdr.Parent=autoCard
+	local whI = Instance.new("TextLabel") whI.Size=UDim2.new(0,14,1,0) whI.BackgroundTransparency=1 whI.Text="🔔" whI.TextSize=11 whI.Font=Enum.Font.GothamBold whI.TextXAlignment=Enum.TextXAlignment.Center whI.TextYAlignment=Enum.TextYAlignment.Center whI.Parent=whHdr
+	local whT = Instance.new("TextLabel") whT.Size=UDim2.new(1,-20,1,0) whT.Position=UDim2.new(0,20,0,0) whT.BackgroundTransparency=1 whT.Text="Discord Webhook" whT.TextColor3=Color3.fromRGB(205,205,215) whT.TextSize=12 whT.Font=Enum.Font.GothamBold whT.TextXAlignment=Enum.TextXAlignment.Left whT.TextYAlignment=Enum.TextYAlignment.Center whT.Parent=whHdr
+	makeSpacer(autoCard,16,5)
+	-- URL input
+	local wrap = Instance.new("Frame") wrap.Size=UDim2.new(1,0,0,32) wrap.BackgroundColor3=Color3.fromRGB(14,14,19) wrap.BorderSizePixel=0 wrap.LayoutOrder=17 wrap.Parent=autoCard
+	Instance.new("UICorner",wrap).CornerRadius=UDim.new(0,7)
+	_whInputStroke = Instance.new("UIStroke",wrap) _whInputStroke.Color=Color3.fromRGB(34,34,46) _whInputStroke.Thickness=1
+	_whInput = Instance.new("TextBox") _whInput.Size=UDim2.new(1,-12,1,0) _whInput.Position=UDim2.new(0,10,0,0) _whInput.BackgroundTransparency=1 _whInput.Text="" _whInput.PlaceholderText="Paste Discord webhook URL..." _whInput.PlaceholderColor3=Color3.fromRGB(52,52,68) _whInput.TextColor3=Color3.fromRGB(195,195,210) _whInput.TextSize=10 _whInput.Font=Enum.Font.Gotham _whInput.TextXAlignment=Enum.TextXAlignment.Left _whInput.TextYAlignment=Enum.TextYAlignment.Center _whInput.ClearTextOnFocus=false _whInput.TextTruncate=Enum.TextTruncate.AtEnd _whInput.Parent=wrap
+	wrap.ClipsDescendants=true
+	_whInput.Focused:Connect(function() TweenService:Create(_whInputStroke,TweenInfo.new(0.15),{Color=Color3.fromRGB(34,100,200),Thickness=1.5}):Play() end)
+	makeSpacer(autoCard,18,5)
+	-- Toggle row
+	local cr = Instance.new("Frame") cr.Size=UDim2.new(1,0,0,22) cr.BackgroundTransparency=1 cr.LayoutOrder=19 cr.Parent=autoCard
+	local wtr = Instance.new("TextButton") wtr.Size=UDim2.new(0,36,0,18) wtr.Position=UDim2.new(0,0,0.5,-9) wtr.BackgroundColor3=Color3.fromRGB(30,30,42) wtr.Text="" wtr.BorderSizePixel=0 wtr.Parent=cr
+	Instance.new("UICorner",wtr).CornerRadius=UDim.new(1,0)
+	local wth = Instance.new("Frame") wth.Size=UDim2.new(0,12,0,12) wth.Position=UDim2.new(0,3,0.5,-6) wth.BackgroundColor3=Color3.fromRGB(82,82,105) wth.BorderSizePixel=0 wth.Parent=wtr
+	Instance.new("UICorner",wth).CornerRadius=UDim.new(1,0)
+	local wtl = Instance.new("TextLabel") wtl.Size=UDim2.new(0,110,1,0) wtl.Position=UDim2.new(0,44,0,0) wtl.BackgroundTransparency=1 wtl.Text="Notifications OFF" wtl.TextColor3=Color3.fromRGB(82,82,105) wtl.TextSize=10 wtl.Font=Enum.Font.Gotham wtl.TextXAlignment=Enum.TextXAlignment.Left wtl.TextYAlignment=Enum.TextYAlignment.Center wtl.Parent=cr
+	_whStatusDot = Instance.new("Frame") _whStatusDot.Size=UDim2.new(0,7,0,7) _whStatusDot.AnchorPoint=Vector2.new(1,0.5) _whStatusDot.Position=UDim2.new(1,-56,0.5,0) _whStatusDot.BackgroundColor3=Color3.fromRGB(55,55,70) _whStatusDot.BorderSizePixel=0 _whStatusDot.Parent=cr
+	Instance.new("UICorner",_whStatusDot).CornerRadius=UDim.new(1,0)
+	_whStatusTxt = Instance.new("TextLabel") _whStatusTxt.Size=UDim2.new(0,46,1,0) _whStatusTxt.AnchorPoint=Vector2.new(1,0) _whStatusTxt.Position=UDim2.new(1,0,0,0) _whStatusTxt.BackgroundTransparency=1 _whStatusTxt.Text="Not set" _whStatusTxt.TextColor3=Color3.fromRGB(55,55,70) _whStatusTxt.TextSize=9 _whStatusTxt.Font=Enum.Font.GothamBold _whStatusTxt.TextXAlignment=Enum.TextXAlignment.Right _whStatusTxt.TextYAlignment=Enum.TextYAlignment.Center _whStatusTxt.Parent=cr
+	makeSpacer(autoCard,20,6)
+	-- Test button
+	local tb = Instance.new("TextButton") tb.Size=UDim2.new(1,0,0,28) tb.BackgroundColor3=Color3.fromRGB(20,45,88) tb.Text="  Send Test Webhook" tb.TextColor3=Color3.fromRGB(100,155,230) tb.TextSize=11 tb.Font=Enum.Font.GothamBold tb.BorderSizePixel=0 tb.LayoutOrder=21 tb.Parent=autoCard
+	Instance.new("UICorner",tb).CornerRadius=UDim.new(0,7)
+	Instance.new("UIStroke",tb).Color=Color3.fromRGB(38,82,160)
+	makeSpacer(autoCard,22,4)
+
+	local function setWhStatus(col,txt)
+		TweenService:Create(_whStatusDot,TweenInfo.new(0.2),{BackgroundColor3=col}):Play()
+		_whStatusTxt.Text=txt _whStatusTxt.TextColor3=col
+	end
+
+	local function sendWH(title,desc,color,isTest)
+		local url=getgenv().WEBHOOK_URL
+		if not url or url=="" then return end
+		local function jesc(s) return tostring(s):gsub('\\','\\\\'):gsub('"','\\"'):gsub('\n','\\n') end
+		local elapsed=getElapsed() local mins=math.max(elapsed/60,0.016)
+		local rate=math.floor(totalEarned/mins)
+		local bp=player:FindFirstChild("Backpack") local wallet="?"
+		if bp then local w=bp:FindFirstChild("[Wallet]") if w then local h=w:FindFirstChild("Handle") if h then local bb=h:FindFirstChildOfClass("BillboardGui") if bb then local tl=bb:FindFirstChildOfClass("TextLabel") if tl and tl.Text~="" then wallet=tl.Text end end end end end
+		local tier do
+			local s=tonumber(getgenv().LICENSE_TIMELEFT or 0) or 0
+			if s<3600 then tier="Free Trial" elseif s<=86400*4 then tier="3-Day" elseif s<=86400*8 then tier="Weekly" elseif s<=86400*32 then tier="Monthly" else tier="Premium" end
+		end
+		local av=resolveAvatarUrl()
+		local stamp=os.date("!%Y-%m-%dT%H:%M:%SZ",os.time())
+		local fields={
+			{n="👤 Player",v=player.DisplayName.." (@"..player.Name..")",i=true},
+			{n="🆔 User ID",v=tostring(player.UserId),i=true},
+			{n="🏅 License",v=tier,i=true},
+			{n="💰 Wallet",v=wallet,i=true},
+			{n="💵 Earned",v=formatMoney(totalEarned),i=true},
+			{n="📈 Rate",v=formatMoney(rate).."/min",i=true},
+			{n="⏱ Session",v=formatTime(elapsed),i=true},
+			{n="🎮 Place",v=tostring(game.PlaceId),i=true},
+			{n="🌐 Job",v=tostring(game.JobId):sub(1,18).."...",i=true},
+		}
+		local fa={} for _,f in ipairs(fields) do table.insert(fa,'{"name":"'..jesc(f.n)..'","value":"'..jesc(f.v)..'","inline":'..(f.i and"true"or"false")..'}') end
+		local t=(isTest and"[TEST] "or"")..title
+		local body='{"embeds":[{"title":"'..jesc(t)..'","description":"'..jesc(desc)..'","color":'..tostring(color)..',"thumbnail":{"url":"'..jesc(av)..'"},"fields":['..table.concat(fa,',')..'],"footer":{"text":"ATM Farmer • Made by Wraith"},"timestamp":"'..stamp..'"}]}'
+		task.spawn(function()
+			local ok=pcall(function()
+				local req=(syn and syn.request) or (http and http.request) or request
+				req({Url=url,Method="POST",Headers={["Content-Type"]="application/json"},Body=body})
+			end)
+			if ok then setWhStatus(Color3.fromRGB(34,197,94),"Sent ✓")
+			else setWhStatus(Color3.fromRGB(210,55,55),"Failed") end
+			task.delay(4,function()
+				local v=getgenv().WEBHOOK_URL~=""
+				setWhStatus(v and Color3.fromRGB(34,197,94) or Color3.fromRGB(55,55,70), v and"Connected"or"Not set")
+			end)
+		end)
+	end
+	getgenv()._wh_send=sendWH
+
+	_validateUrl=function()
+		local url=_whInput.Text getgenv().WEBHOOK_URL=url
+		local v=url:match("^https://discord%.com/api/webhooks/") or url:match("^https://ptb%.discord%.com/api/webhooks/")
+		if v then setWhStatus(Color3.fromRGB(34,197,94),"Connected") TweenService:Create(_whInputStroke,TweenInfo.new(0.2),{Color=Color3.fromRGB(30,75,30)}):Play()
+		elseif url=="" then setWhStatus(Color3.fromRGB(55,55,70),"Not set") TweenService:Create(_whInputStroke,TweenInfo.new(0.2),{Color=Color3.fromRGB(34,34,46)}):Play()
+		else setWhStatus(Color3.fromRGB(210,55,55),"Invalid") TweenService:Create(_whInputStroke,TweenInfo.new(0.2),{Color=Color3.fromRGB(80,28,28)}):Play() end
+	end
+	_whInput.FocusLost:Connect(_validateUrl)
+
+	local whOn=false
+	_setWebhookToggle=function(on)
+		whOn=on getgenv().WEBHOOK_ENABLED=on
+		local ti=TweenInfo.new(0.18,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
+		if on then TweenService:Create(wtr,ti,{BackgroundColor3=Color3.fromRGB(22,160,60)}):Play() TweenService:Create(wth,ti,{Position=UDim2.new(1,-15,0.5,-6),BackgroundColor3=Color3.fromRGB(255,255,255)}):Play() wtl.Text="Notifications ON" wtl.TextColor3=Color3.fromRGB(25,190,75)
+		else TweenService:Create(wtr,ti,{BackgroundColor3=Color3.fromRGB(30,30,42)}):Play() TweenService:Create(wth,ti,{Position=UDim2.new(0,3,0.5,-6),BackgroundColor3=Color3.fromRGB(82,82,105)}):Play() wtl.Text="Notifications OFF" wtl.TextColor3=Color3.fromRGB(82,82,105) end
+	end
+	wtr.MouseButton1Click:Connect(function() _setWebhookToggle(not whOn) end)
+
+	tb.MouseButton1Click:Connect(function()
+		if _whInput.Text=="" then _whInput.PlaceholderText="⚠ Paste a URL first!" task.delay(2.5,function() _whInput.PlaceholderText="Paste Discord webhook URL..." end) return end
+		local ot,ob=tb.Text,tb.BackgroundColor3 tb.Text="  Sending..." tb.BackgroundColor3=Color3.fromRGB(25,25,36)
+		sendWH("Test Notification","Webhook connected. ATM Farmer notifications active.",0x22C55E,true)
+		task.delay(1.5,function() tb.Text="  ✓ Sent!" tb.BackgroundColor3=Color3.fromRGB(16,72,38) task.delay(2.2,function() tb.Text=ot tb.BackgroundColor3=ob end) end)
+	end)
+end
+
+-- ══ SAVE CPU SYSTEM ══
+local _toggleSaveCPU, _fpsInput, _cpuFpsLbl
+
+local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
+	makeSpacer(autoCard,12,3) makeDivider(autoCard,13) makeSpacer(autoCard,14,3)
+	-- Row wrapper
+	local rw=Instance.new("Frame") rw.Size=UDim2.new(1,0,0,0) rw.AutomaticSize=Enum.AutomaticSize.Y rw.BackgroundTransparency=1 rw.LayoutOrder=14 rw.Parent=autoCard
+	local rl=Instance.new("UIListLayout",rw) rl.SortOrder=Enum.SortOrder.LayoutOrder rl.Padding=UDim.new(0,0)
+	-- Title row
+	local tr=Instance.new("Frame") tr.Size=UDim2.new(1,0,0,20) tr.BackgroundTransparency=1 tr.Parent=rw
+	local tl=Instance.new("TextLabel") tl.Size=UDim2.new(1,-120,1,0) tl.BackgroundTransparency=1 tl.Text="Save CPU" tl.TextColor3=Color3.fromRGB(210,210,220) tl.TextSize=12 tl.Font=Enum.Font.GothamBold tl.TextXAlignment=Enum.TextXAlignment.Left tl.Parent=tr
+	_cpuFpsLbl=Instance.new("TextLabel") _cpuFpsLbl.Size=UDim2.new(0,110,1,0) _cpuFpsLbl.Position=UDim2.new(1,-110,0,0) _cpuFpsLbl.BackgroundTransparency=1 _cpuFpsLbl.Text=getgenv().SAVE_CPU_FPS.." FPS" _cpuFpsLbl.TextColor3=Color3.fromRGB(48,48,62) _cpuFpsLbl.TextSize=9 _cpuFpsLbl.Font=Enum.Font.GothamBold _cpuFpsLbl.TextXAlignment=Enum.TextXAlignment.Right _cpuFpsLbl.TextYAlignment=Enum.TextYAlignment.Center _cpuFpsLbl.Parent=tr
+	local sl=Instance.new("TextLabel") sl.Size=UDim2.new(1,0,0,12) sl.BackgroundTransparency=1 sl.Text="Reduces rendering while keeping auto farming running — OFF" sl.TextColor3=Color3.fromRGB(58,58,75) sl.TextSize=9 sl.Font=Enum.Font.Gotham sl.TextXAlignment=Enum.TextXAlignment.Left sl.LayoutOrder=2 sl.Parent=rw
+	local togRow=Instance.new("Frame") togRow.Size=UDim2.new(1,0,0,28) togRow.BackgroundTransparency=1 togRow.LayoutOrder=3 togRow.Parent=rw
+	local ctr=Instance.new("TextButton") ctr.Size=UDim2.new(0,42,0,22) ctr.Position=UDim2.new(0,0,0.5,-11) ctr.BackgroundColor3=Color3.fromRGB(30,30,42) ctr.Text="" ctr.BorderSizePixel=0 ctr.Parent=togRow
+	Instance.new("UICorner",ctr).CornerRadius=UDim.new(1,0)
+	local cth=Instance.new("Frame") cth.Size=UDim2.new(0,16,0,16) cth.Position=UDim2.new(0,3,0.5,-8) cth.BackgroundColor3=Color3.fromRGB(82,82,105) cth.BorderSizePixel=0 cth.Parent=ctr
+	Instance.new("UICorner",cth).CornerRadius=UDim.new(1,0)
+	local ctl=Instance.new("TextLabel") ctl.Size=UDim2.new(1,-50,1,0) ctl.Position=UDim2.new(0,50,0,0) ctl.BackgroundTransparency=1 ctl.Text="Enable Save CPU" ctl.TextColor3=Color3.fromRGB(82,82,105) ctl.TextSize=10 ctl.Font=Enum.Font.Gotham ctl.TextXAlignment=Enum.TextXAlignment.Left ctl.TextYAlignment=Enum.TextYAlignment.Center ctl.Parent=togRow
+	-- Submenu
+	local sm=Instance.new("Frame") sm.Size=UDim2.new(1,0,0,0) sm.ClipsDescendants=true sm.BackgroundTransparency=1 sm.LayoutOrder=4 sm.Parent=rw
+	local si=Instance.new("Frame") si.Size=UDim2.new(1,0,0,0) si.AutomaticSize=Enum.AutomaticSize.Y si.BackgroundColor3=Color3.fromRGB(14,14,18) si.BorderSizePixel=0 si.Parent=sm
+	Instance.new("UICorner",si).CornerRadius=UDim.new(0,8)
+	local ssl=Instance.new("UIListLayout",si) ssl.SortOrder=Enum.SortOrder.LayoutOrder ssl.Padding=UDim.new(0,0)
+	local sp=Instance.new("UIPadding",si) sp.PaddingTop=UDim.new(0,10) sp.PaddingBottom=UDim.new(0,10) sp.PaddingLeft=UDim.new(0,12) sp.PaddingRight=UDim.new(0,12)
+	local fr=Instance.new("Frame") fr.Size=UDim2.new(1,0,0,36) fr.BackgroundTransparency=1 fr.LayoutOrder=1 fr.Parent=si
+	local fl=Instance.new("TextLabel") fl.Size=UDim2.new(0.55,0,1,0) fl.BackgroundTransparency=1 fl.Text="FPS Limit" fl.TextColor3=Color3.fromRGB(180,180,195) fl.TextSize=11 fl.Font=Enum.Font.GothamBold fl.TextXAlignment=Enum.TextXAlignment.Left fl.TextYAlignment=Enum.TextYAlignment.Center fl.Parent=fr
+	local fiw=Instance.new("Frame") fiw.Size=UDim2.new(0,72,0,28) fiw.Position=UDim2.new(1,-72,0.5,-14) fiw.BackgroundColor3=Color3.fromRGB(10,10,14) fiw.BorderSizePixel=0 fiw.Parent=fr
+	Instance.new("UICorner",fiw).CornerRadius=UDim.new(0,7)
+	local fis=Instance.new("UIStroke",fiw) fis.Color=Color3.fromRGB(38,38,52) fis.Thickness=1
+	_fpsInput=Instance.new("TextBox") _fpsInput.Size=UDim2.new(1,-10,1,0) _fpsInput.Position=UDim2.new(0,5,0,0) _fpsInput.BackgroundTransparency=1 _fpsInput.Text=tostring(getgenv().SAVE_CPU_FPS) _fpsInput.PlaceholderText="5" _fpsInput.TextColor3=Color3.fromRGB(195,195,210) _fpsInput.TextSize=13 _fpsInput.Font=Enum.Font.GothamBold _fpsInput.TextXAlignment=Enum.TextXAlignment.Center _fpsInput.TextYAlignment=Enum.TextYAlignment.Center _fpsInput.ClearTextOnFocus=false _fpsInput.Parent=fiw
+	_fpsInput.FocusLost:Connect(function()
+		local v=math.clamp(tonumber(_fpsInput.Text) or 5,1,240)
+		_fpsInput.Text=tostring(v) getgenv().SAVE_CPU_FPS=v _cpuFpsLbl.Text=v.." FPS"
+		if getgenv().SAVE_CPU_ENABLED then pcall(function() setfpscap(v) end) end
+	end)
+	-- Overlay
+	local ov=Instance.new("CanvasGroup") ov.Size=UDim2.new(1,0,1,0) ov.BackgroundColor3=Color3.fromRGB(6,6,7) ov.GroupTransparency=1 ov.ZIndex=50 ov.Visible=false ov.Parent=gui
+	local ol=Instance.new("UIListLayout",ov) ol.HorizontalAlignment=Enum.HorizontalAlignment.Center ol.VerticalAlignment=Enum.VerticalAlignment.Center ol.Padding=UDim.new(0,6)
+	local ic=Instance.new("Frame") ic.Size=UDim2.new(0,300,0,0) ic.AutomaticSize=Enum.AutomaticSize.Y ic.BackgroundColor3=Color3.fromRGB(10,10,13) ic.BorderSizePixel=0 ic.Parent=ov
+	Instance.new("UICorner",ic).CornerRadius=UDim.new(0,14) Instance.new("UIStroke",ic).Color=Color3.fromRGB(30,30,38)
+	local icl=Instance.new("UIListLayout",ic) icl.HorizontalAlignment=Enum.HorizontalAlignment.Center icl.Padding=UDim.new(0,4)
+	local icp=Instance.new("UIPadding",ic) icp.PaddingTop=UDim.new(0,20) icp.PaddingBottom=UDim.new(0,20) icp.PaddingLeft=UDim.new(0,24) icp.PaddingRight=UDim.new(0,24)
+	local function oLbl(txt,size,col,bold)
+		local l=Instance.new("TextLabel") l.Size=UDim2.new(1,0,0,size==28 and 36 or(size==18 and 30 or 14))
+		l.BackgroundTransparency=1 l.Text=txt l.TextColor3=col l.TextSize=size
+		l.Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham l.TextXAlignment=Enum.TextXAlignment.Center l.Parent=ic return l
+	end
+	oLbl(player.Name,11,Color3.fromRGB(72,72,88),false)
+	local cel=oLbl("$0",28,Color3.fromRGB(190,190,200),true)
+	local cpl=oLbl("+ $0",12,Color3.fromRGB(52,52,68),false)
+	local ctl2=oLbl("00:00:00",18,Color3.fromRGB(170,170,185),true)
+	local cal=oLbl("breaking atm",10,Color3.fromRGB(48,48,62),false)
+	oLbl("discord.gg/iku",9,Color3.fromRGB(36,36,48),false)
+
+	local _cpuHB,_prevFPS=nil,60
+	local function setLGFX(on) pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("MainEvent"):FireServer("UpdateSingleSetting","LowGFX",on) end) end
+	local function fmtT(s) return string.format("%02d:%02d:%02d",math.floor(s/3600),math.floor((s%3600)/60),s%60) end
+	local baseEarned=0
+
+	local function enterCPU()
+		getgenv().SAVE_CPU_ENABLED=true
+		if main:IsA("CanvasGroup") then TweenService:Create(main,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=1}):Play() end
+		ov.Visible=true ov.GroupTransparency=1 TweenService:Create(ov,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=0}):Play()
+		_prevFPS=60 pcall(function() _prevFPS=getfpscap() end) pcall(function() setfpscap(getgenv().SAVE_CPU_FPS) end) setLGFX(true)
+		baseEarned=totalEarned
+		if _cpuHB then _cpuHB:Disconnect() end
+		_cpuHB=RunService.Heartbeat:Connect(function() pcall(function()
+			cel.Text=formatMoney(totalEarned) cpl.Text="+ "..formatMoney(totalEarned-baseEarned)
+			ctl2.Text=fmtT(getElapsed()) cal.Text=currentAction:lower()
+		end) end)
+	end
+	local function exitCPU()
+		getgenv().SAVE_CPU_ENABLED=false
+		TweenService:Create(ov,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=1}):Play()
+		task.delay(0.36,function() ov.Visible=false end)
+		if main:IsA("CanvasGroup") then TweenService:Create(main,TweenInfo.new(0.35,Enum.EasingStyle.Quint),{GroupTransparency=0}):Play() end
+		pcall(function() setfpscap(_prevFPS) end) setLGFX(false)
+		if _cpuHB then _cpuHB:Disconnect() _cpuHB=nil end
+	end
+
+	_toggleSaveCPU=function(on)
+		local ti=TweenInfo.new(0.18,Enum.EasingStyle.Quad,Enum.EasingDirection.Out)
+		if on then TweenService:Create(ctr,ti,{BackgroundColor3=Color3.fromRGB(22,160,60)}):Play() TweenService:Create(cth,ti,{Position=UDim2.new(1,-19,0.5,-8),BackgroundColor3=Color3.fromRGB(255,255,255)}):Play() ctl.Text="Save CPU Active" ctl.TextColor3=Color3.fromRGB(25,190,75) sl.Text="Save CPU ON — rendering reduced to "..getgenv().SAVE_CPU_FPS.." FPS" _cpuFpsLbl.TextColor3=Color3.fromRGB(25,190,75) enterCPU() TweenService:Create(sm,TweenInfo.new(0.22,Enum.EasingStyle.Quint),{Size=UDim2.new(1,0,0,0)}):Play()
+		else TweenService:Create(ctr,ti,{BackgroundColor3=Color3.fromRGB(30,30,42)}):Play() TweenService:Create(cth,ti,{Position=UDim2.new(0,3,0.5,-8),BackgroundColor3=Color3.fromRGB(82,82,105)}):Play() ctl.Text="Enable Save CPU" ctl.TextColor3=Color3.fromRGB(82,82,105) sl.Text="Reduces rendering while keeping auto farming running — OFF" _cpuFpsLbl.TextColor3=Color3.fromRGB(48,48,62) exitCPU() end
+	end
+	getgenv()._toggleSaveCPU=_toggleSaveCPU
+
+	-- Title click = open/close submenu
+	local smOpen=false
+	local tb2=Instance.new("TextButton") tb2.Size=UDim2.new(1,0,0,20) tb2.BackgroundTransparency=1 tb2.Text="" tb2.ZIndex=5 tb2.Parent=tr
+	tb2.MouseButton1Click:Connect(function()
+		if getgenv().SAVE_CPU_ENABLED then return end
+		smOpen=not smOpen
+		TweenService:Create(sm,TweenInfo.new(0.22,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{Size=UDim2.new(1,0,0,smOpen and(ssl.AbsoluteContentSize.Y+24) or 0)}):Play()
+	end)
+	ctr.MouseButton1Click:Connect(function() _toggleSaveCPU(not getgenv().SAVE_CPU_ENABLED) end)
+end
+
+-- ══ SAVE SETTINGS CARD ══
+local _saveStatusLbl
+
+local function buildSettingsCard(scroll, makeCard, makeCardHeader, makeSpacer, cfgSaveRef)
+	local sc=makeCard(9)
+	makeCardHeader(sc,1,"💾","Settings")
+	makeSpacer(sc,2,8)
+	_saveStatusLbl=Instance.new("TextLabel") _saveStatusLbl.Size=UDim2.new(1,0,0,12) _saveStatusLbl.BackgroundTransparency=1 _saveStatusLbl.Text=_cfgLoaded and"Loaded saved settings."or"No saved settings found." _saveStatusLbl.TextColor3=_cfgLoaded and Color3.fromRGB(25,190,75) or Color3.fromRGB(58,58,75) _saveStatusLbl.TextSize=9 _saveStatusLbl.Font=Enum.Font.Gotham _saveStatusLbl.TextXAlignment=Enum.TextXAlignment.Left _saveStatusLbl.LayoutOrder=3 _saveStatusLbl.Parent=sc
+	makeSpacer(sc,4,6)
+	local br=Instance.new("Frame") br.Size=UDim2.new(1,0,0,32) br.BackgroundTransparency=1 br.LayoutOrder=5 br.Parent=sc
+	local brl=Instance.new("UIListLayout",br) brl.FillDirection=Enum.FillDirection.Horizontal brl.Padding=UDim.new(0,8) brl.VerticalAlignment=Enum.VerticalAlignment.Center
+	local sb=Instance.new("TextButton") sb.Size=UDim2.new(0.6,-4,1,0) sb.BackgroundColor3=Color3.fromRGB(18,60,28) sb.Text="💾  Save Settings" sb.TextColor3=Color3.fromRGB(25,190,75) sb.TextSize=11 sb.Font=Enum.Font.GothamBold sb.BorderSizePixel=0 sb.Parent=br
+	Instance.new("UICorner",sb).CornerRadius=UDim.new(0,8)
+	local rb=Instance.new("TextButton") rb.Size=UDim2.new(0.4,-4,1,0) rb.BackgroundColor3=Color3.fromRGB(38,14,14) rb.Text="🗑  Reset" rb.TextColor3=Color3.fromRGB(180,55,55) rb.TextSize=11 rb.Font=Enum.Font.GothamBold rb.BorderSizePixel=0 rb.Parent=br
+	Instance.new("UICorner",rb).CornerRadius=UDim.new(0,8)
+	makeSpacer(sc,6,4)
+	sb.MouseButton1Click:Connect(function()
+		if cfgSaveRef() then _saveStatusLbl.Text="Settings saved successfully." _saveStatusLbl.TextColor3=Color3.fromRGB(25,190,75) sb.Text="✓  Saved!" task.delay(2,function() if sb and sb.Parent then sb.Text="💾  Save Settings" end end)
+		else _saveStatusLbl.Text="Failed to save settings." _saveStatusLbl.TextColor3=Color3.fromRGB(210,55,55) end
+	end)
+	local rc=false
+	rb.MouseButton1Click:Connect(function()
+		if not rc then rc=true rb.Text="Confirm?" rb.TextColor3=Color3.fromRGB(255,100,100) task.delay(3,function() rc=false if rb and rb.Parent then rb.Text="🗑  Reset" rb.TextColor3=Color3.fromRGB(180,55,55) end end)
+		else rc=false pcall(function() delfile(CFG_KEY..".json") end) _saveStatusLbl.Text="Reset to defaults." _saveStatusLbl.TextColor3=Color3.fromRGB(180,140,40) rb.Text="🗑  Reset" rb.TextColor3=Color3.fromRGB(180,55,55) end
+	end)
+end
+
+-- ══ CREDITS ══
+local function buildCredits(scroll)
+	local cw=Instance.new("Frame") cw.Size=UDim2.new(1,0,0,26) cw.BackgroundTransparency=1 cw.LayoutOrder=10 cw.Parent=scroll
+	local cl=Instance.new("UIListLayout",cw) cl.FillDirection=Enum.FillDirection.Horizontal cl.HorizontalAlignment=Enum.HorizontalAlignment.Center cl.VerticalAlignment=Enum.VerticalAlignment.Center cl.Padding=UDim.new(0,5)
+	local function dot() local d=Instance.new("Frame") d.Size=UDim2.new(0,3,0,3) d.BackgroundColor3=Color3.fromRGB(36,36,50) d.BorderSizePixel=0 d.Parent=cw Instance.new("UICorner",d).CornerRadius=UDim.new(1,0) end
+	local cm=Instance.new("TextLabel") cm.Size=UDim2.new(0,0,0,14) cm.AutomaticSize=Enum.AutomaticSize.X cm.BackgroundTransparency=1 cm.Text="Made by Wraith" cm.TextColor3=Color3.fromRGB(42,42,56) cm.TextSize=9 cm.Font=Enum.Font.GothamBold cm.TextXAlignment=Enum.TextXAlignment.Center cm.Parent=cw
+	dot()
+	local lk=Instance.new("TextButton") lk.Size=UDim2.new(0,0,0,14) lk.AutomaticSize=Enum.AutomaticSize.X lk.BackgroundTransparency=1 lk.Text="discord.gg/uCUSZeuM48" lk.TextColor3=Color3.fromRGB(42,42,56) lk.TextSize=9 lk.Font=Enum.Font.Gotham lk.BorderSizePixel=0 lk.TextXAlignment=Enum.TextXAlignment.Center lk.Parent=cw
+	lk.MouseEnter:Connect(function() TweenService:Create(lk,TweenInfo.new(0.15),{TextColor3=Color3.fromRGB(80,105,165)}):Play() end)
+	lk.MouseLeave:Connect(function() TweenService:Create(lk,TweenInfo.new(0.15),{TextColor3=Color3.fromRGB(42,42,56)}):Play() end)
+	lk.MouseButton1Click:Connect(function()
+		pcall(function() setclipboard("https://discord.gg/uCUSZeuM48") end)
+		local o=lk.Text lk.Text="✓ Copied!" lk.TextColor3=Color3.fromRGB(30,110,70)
+		task.delay(2,function() lk.Text=o lk.TextColor3=Color3.fromRGB(42,42,56) end)
+	end)
+end
+
+-- ══ DISCONNECT WEBHOOK ══
+local function hookDisconnect(closeBtn)
+	local function summary(reason)
+		if not getgenv().WEBHOOK_ENABLED then return end
+		local fn=getgenv()._wh_send if not fn then return end
+		if farmStart then totalElapsed=totalElapsed+(os.time()-farmStart) farmStart=nil end
+		local mins=math.max(totalElapsed/60,0.016) local rate=math.floor(totalEarned/mins)
+		local desc="Session ended: **"..reason.."**\nTotal Earned: **"..formatMoney(totalEarned).."**\nRate: **"..formatMoney(rate).."/min**\nDuration: **"..formatTime(totalElapsed).."**\nATMs Broken: **"..tostring(atmCount).."**"
+		fn("🔴  Session Ended",desc,0xEF4444,false) task.wait(0.8)
+	end
+	player.AncestryChanged:Connect(function(_,p) if p==nil then summary("Disconnected / Kicked") end end)
+	closeBtn.MouseButton1Click:Connect(function() summary("Menu Closed") end)
+end
+
+-- ══ RESTORE SETTINGS ══
+local function restoreSettings(setRadiusFn, setFBFn, setHFFn, toggleBtn)
+	if not _cfgLoaded then return end
+	task.spawn(function()
+		task.wait(0.2)
+		if _cfg.webhookUrl and _cfg.webhookUrl~="" then
+			_whInput.Text=_cfg.webhookUrl getgenv().WEBHOOK_URL=_cfg.webhookUrl _validateUrl()
+		end
+		if _cfg.webhookEnabled and _setWebhookToggle then _setWebhookToggle(true) end
+		if _cfg.radiusEnabled and IS_PREMIUM and setRadiusFn then setRadiusFn(true) end
+		if _cfg.fastBreak and IS_PREMIUM and setFBFn then setFBFn(true) end
+		if _cfg.hiddenFarm and IS_PREMIUM and setHFFn then setHFFn(true) end
+		if _cfg.saveCpuEnabled and _toggleSaveCPU then
+			getgenv().SAVE_CPU_FPS=_cfg.saveCpuFPS or 5
+			if _fpsInput then _fpsInput.Text=tostring(getgenv().SAVE_CPU_FPS) end
+			if _cpuFpsLbl then _cpuFpsLbl.Text=getgenv().SAVE_CPU_FPS.." FPS" end
+			_toggleSaveCPU(true)
+		end
+		if _cfg.farmRunning then task.wait(0.3) toggleBtn.MouseButton1Click:Fire() end
+	end)
+end
+
+
 -- GUI
 -- ══════════════════════════════════════
 local gui = Instance.new("ScreenGui")
@@ -696,6 +988,7 @@ closeBtn.MouseButton1Click:Connect(function()
 	local h = getHum() if h then h.PlatformStand = false end
 	gui:Destroy()
 end)
+hookDisconnect(closeBtn)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, 0, 1, -52)
@@ -987,7 +1280,7 @@ badgeWrapL.VerticalAlignment = Enum.VerticalAlignment.Center
 local tierBadge = Instance.new("TextLabel")
 tierBadge.Size = UDim2.new(0, 80, 0, 22)
 tierBadge.BackgroundColor3 = Color3.new(
-	math.min(licColor.R * 0.22 + 0.04, 1), math.min(licColor.G * 0.22 + 0.04, 1), math.min(licColor.B * 0.22 + 0.04, 1))
+	math.min(licColor.R*0.22+0.04,1), math.min(licColor.G*0.22+0.04,1), math.min(licColor.B*0.22+0.04,1))
 tierBadge.BorderSizePixel = 0
 tierBadge.Text = licLabel
 tierBadge.TextColor3 = licColor
@@ -998,7 +1291,6 @@ tierBadge.LayoutOrder = 1
 tierBadge.Parent = badgeWrap
 local tierBadgeC = Instance.new("UICorner", tierBadge)
 tierBadgeC.CornerRadius = UDim.new(0, 6)
--- No stroke on tier badge: keeps text readable against dark bg
 
 local statusBadge = Instance.new("TextLabel")
 statusBadge.Size = UDim2.new(0, 80, 0, 16)
@@ -1112,11 +1404,6 @@ local function onCharacterAdded(newChar)
 end
 player.CharacterAdded:Connect(onCharacterAdded)
 
--- ══ PRE-DECLARE: UI locals that cross do..end boundaries ══
-local earningsBig, runtimeLbl, earnRateLbl
-local punchVal, dropsVal, skippedVal, earnRateVal
-local actionLbl, toggleBtn
-
 -- ══ PRE-DECLARE: live scanner values ══
 local atmAvailVal, atmBrokenVal, detScanLbl
 local vaultOpenVal, vaultClosedVal, vaultScanLbl
@@ -1158,7 +1445,6 @@ vaultClosedVal = makeDetBox(vaultGrid, 2, Color3.fromRGB(30,13,13), 775054601232
 end -- ── end detection + vault scope ──
 
 -- ══ AUTOMATION CARD ══
-do
 local autoCard = makeCard(4)
 makeCardHeader(autoCard, 1, 121618404766337, "Automation", true)
 makeSpacer(autoCard, 2, 9)
@@ -1210,713 +1496,11 @@ ugBadge.TextXAlignment = Enum.TextXAlignment.Center ugBadge.ZIndex = 3
 ugBadge.Parent = hfTrack.Parent
 Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4) end
 
-
--- ══ PRE-DECLARE: locals shared across do..end scope blocks ══
-local whInput, whStatusDot, whStatusTxt, whInputStroke, whTestBtn, validateUrl, setWebhookToggle
-local cpuFpsLbl, fpsInput
-
-makeSpacer(autoCard, 12, 3) makeDivider(autoCard, 13) makeSpacer(autoCard, 14, 3)
-
--- ══ SAVE CPU ROW ══
-do
-local cpuRowWrap = Instance.new("Frame")
-cpuRowWrap.Size = UDim2.new(1, 0, 0, 0)
-cpuRowWrap.AutomaticSize = Enum.AutomaticSize.Y
-cpuRowWrap.BackgroundTransparency = 1
-cpuRowWrap.LayoutOrder = 14
-cpuRowWrap.Parent = autoCard
-
-local cpuTitleRow = Instance.new("Frame")
-cpuTitleRow.Size = UDim2.new(1, 0, 0, 20)
-cpuTitleRow.BackgroundTransparency = 1
-cpuTitleRow.Parent = cpuRowWrap
-local cpuLayout = Instance.new("UIListLayout", cpuRowWrap)
-cpuLayout.SortOrder = Enum.SortOrder.LayoutOrder
-cpuLayout.Padding = UDim.new(0, 0)
-
--- Title + FPS display label on the right
-local cpuTitleLbl = Instance.new("TextLabel")
-cpuTitleLbl.Size = UDim2.new(1, -120, 1, 0)
-cpuTitleLbl.BackgroundTransparency = 1
-cpuTitleLbl.Text = "Save CPU"
-cpuTitleLbl.TextColor3 = Color3.fromRGB(210, 210, 220)
-cpuTitleLbl.TextSize = 12
-cpuTitleLbl.Font = Enum.Font.GothamBold
-cpuTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
-cpuTitleLbl.Parent = cpuTitleRow
-
-cpuFpsLbl = Instance.new("TextLabel")
-cpuFpsLbl.Size = UDim2.new(0, 110, 1, 0)
-cpuFpsLbl.Position = UDim2.new(1, -110, 0, 0)
-cpuFpsLbl.BackgroundTransparency = 1
-cpuFpsLbl.Text = getgenv().SAVE_CPU_FPS .. " FPS"
-cpuFpsLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
-cpuFpsLbl.TextSize = 9
-cpuFpsLbl.Font = Enum.Font.GothamBold
-cpuFpsLbl.TextXAlignment = Enum.TextXAlignment.Right
-cpuFpsLbl.TextYAlignment = Enum.TextYAlignment.Center
-cpuFpsLbl.Parent = cpuTitleRow
-
-local cpuSubLbl = Instance.new("TextLabel")
-cpuSubLbl.Size = UDim2.new(1, 0, 0, 12)
-cpuSubLbl.BackgroundTransparency = 1
-cpuSubLbl.Text = "Reduces rendering while keeping auto farming running — OFF"
-cpuSubLbl.TextColor3 = Color3.fromRGB(58, 58, 75)
-cpuSubLbl.TextSize = 9
-cpuSubLbl.Font = Enum.Font.Gotham
-cpuSubLbl.TextXAlignment = Enum.TextXAlignment.Left
-cpuSubLbl.LayoutOrder = 2
-cpuSubLbl.Parent = cpuRowWrap
-
-local cpuToggleRow = Instance.new("Frame")
-cpuToggleRow.Size = UDim2.new(1, 0, 0, 28)
-cpuToggleRow.BackgroundTransparency = 1
-cpuToggleRow.LayoutOrder = 3
-cpuToggleRow.Parent = cpuRowWrap
-
-local cpuTrack = Instance.new("TextButton")
-cpuTrack.Size = UDim2.new(0, 42, 0, 22)
-cpuTrack.Position = UDim2.new(0, 0, 0.5, -11)
-cpuTrack.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
-cpuTrack.Text = "" cpuTrack.BorderSizePixel = 0
-cpuTrack.Parent = cpuToggleRow
-Instance.new("UICorner", cpuTrack).CornerRadius = UDim.new(1, 0)
-local cpuThumb = Instance.new("Frame")
-cpuThumb.Size = UDim2.new(0, 16, 0, 16)
-cpuThumb.Position = UDim2.new(0, 3, 0.5, -8)
-cpuThumb.BackgroundColor3 = Color3.fromRGB(82, 82, 105)
-cpuThumb.BorderSizePixel = 0 cpuThumb.Parent = cpuTrack
-Instance.new("UICorner", cpuThumb).CornerRadius = UDim.new(1, 0)
-local cpuTogLbl = Instance.new("TextLabel")
-cpuTogLbl.Size = UDim2.new(1, -50, 1, 0)
-cpuTogLbl.Position = UDim2.new(0, 50, 0, 0)
-cpuTogLbl.BackgroundTransparency = 1
-cpuTogLbl.Text = "Enable Save CPU"
-cpuTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
-cpuTogLbl.TextSize = 10 cpuTogLbl.Font = Enum.Font.Gotham
-cpuTogLbl.TextXAlignment = Enum.TextXAlignment.Left
-cpuTogLbl.TextYAlignment = Enum.TextYAlignment.Center
-cpuTogLbl.Parent = cpuToggleRow
-
--- ── Save CPU submenu (collapsed by default) ──
-local cpuSubmenu = Instance.new("Frame")
-cpuSubmenu.Size = UDim2.new(1, 0, 0, 0)
-cpuSubmenu.ClipsDescendants = true
-cpuSubmenu.BackgroundTransparency = 1
-cpuSubmenu.LayoutOrder = 4
-cpuSubmenu.Parent = cpuRowWrap
-
-local cpuSubInner = Instance.new("Frame")
-cpuSubInner.Size = UDim2.new(1, 0, 0, 0)
-cpuSubInner.AutomaticSize = Enum.AutomaticSize.Y
-cpuSubInner.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
-cpuSubInner.BorderSizePixel = 0
-cpuSubInner.Parent = cpuSubmenu
-Instance.new("UICorner", cpuSubInner).CornerRadius = UDim.new(0, 8)
-local cpuSubStroke = Instance.new("UIStroke", cpuSubInner)
-cpuSubStroke.Color = Color3.fromRGB(32, 32, 44) cpuSubStroke.Thickness = 1
-local cpuSubLayout = Instance.new("UIListLayout", cpuSubInner)
-cpuSubLayout.SortOrder = Enum.SortOrder.LayoutOrder
-cpuSubLayout.Padding = UDim.new(0, 0)
-local cpuSubPad = Instance.new("UIPadding", cpuSubInner)
-cpuSubPad.PaddingTop = UDim.new(0, 10) cpuSubPad.PaddingBottom = UDim.new(0, 10)
-cpuSubPad.PaddingLeft = UDim.new(0, 12) cpuSubPad.PaddingRight = UDim.new(0, 12)
-
--- FPS Limit row
-local fpsRow = Instance.new("Frame")
-fpsRow.Size = UDim2.new(1, 0, 0, 36)
-fpsRow.BackgroundTransparency = 1
-fpsRow.LayoutOrder = 1
-fpsRow.Parent = cpuSubInner
-
-local fpsLabelTxt = Instance.new("TextLabel")
-fpsLabelTxt.Size = UDim2.new(0.55, 0, 1, 0)
-fpsLabelTxt.BackgroundTransparency = 1
-fpsLabelTxt.Text = "FPS Limit"
-fpsLabelTxt.TextColor3 = Color3.fromRGB(180, 180, 195)
-fpsLabelTxt.TextSize = 11
-fpsLabelTxt.Font = Enum.Font.GothamBold
-fpsLabelTxt.TextXAlignment = Enum.TextXAlignment.Left
-fpsLabelTxt.TextYAlignment = Enum.TextYAlignment.Center
-fpsLabelTxt.Parent = fpsRow
-
-local fpsInputWrap = Instance.new("Frame")
-fpsInputWrap.Size = UDim2.new(0, 72, 0, 28)
-fpsInputWrap.Position = UDim2.new(1, -72, 0.5, -14)
-fpsInputWrap.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-fpsInputWrap.BorderSizePixel = 0
-fpsInputWrap.Parent = fpsRow
-Instance.new("UICorner", fpsInputWrap).CornerRadius = UDim.new(0, 7)
-local fpsInputStroke = Instance.new("UIStroke", fpsInputWrap)
-fpsInputStroke.Color = Color3.fromRGB(38, 38, 52) fpsInputStroke.Thickness = 1
-
-fpsInput = Instance.new("TextBox")
-fpsInput.Size = UDim2.new(1, -10, 1, 0)
-fpsInput.Position = UDim2.new(0, 5, 0, 0)
-fpsInput.BackgroundTransparency = 1
-fpsInput.Text = tostring(getgenv().SAVE_CPU_FPS)
-fpsInput.PlaceholderText = "5"
-fpsInput.PlaceholderColor3 = Color3.fromRGB(52, 52, 68)
-fpsInput.TextColor3 = Color3.fromRGB(195, 195, 210)
-fpsInput.TextSize = 13 fpsInput.Font = Enum.Font.GothamBold
-fpsInput.TextXAlignment = Enum.TextXAlignment.Center
-fpsInput.TextYAlignment = Enum.TextYAlignment.Center
-fpsInput.ClearTextOnFocus = false
-fpsInput.Parent = fpsInputWrap
-
-fpsInput.Focused:Connect(function()
-	TweenService:Create(fpsInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(34, 120, 197), Thickness = 1.5}):Play()
-end)
-fpsInput.FocusLost:Connect(function()
-	TweenService:Create(fpsInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(38, 38, 52), Thickness = 1}):Play()
-	local v = math.clamp(tonumber(fpsInput.Text) or 5, 1, 240)
-	fpsInput.Text = tostring(v)
-	getgenv().SAVE_CPU_FPS = v
-	cpuFpsLbl.Text = v .. " FPS"
-	-- Apply new FPS cap immediately if Save CPU is active
-	if getgenv().SAVE_CPU_ENABLED then
-		setfpscap(v)
-	end
-end)
-
-local fpsHintLbl = Instance.new("TextLabel")
-fpsHintLbl.Size = UDim2.new(1, 0, 0, 12)
-fpsHintLbl.BackgroundTransparency = 1
-fpsHintLbl.Text = "Min: 1 FPS  |  Max: 240 FPS  |  Default: 5 FPS"
-fpsHintLbl.TextColor3 = Color3.fromRGB(46, 46, 60)
-fpsHintLbl.TextSize = 8 fpsHintLbl.Font = Enum.Font.Gotham
-fpsHintLbl.TextXAlignment = Enum.TextXAlignment.Left
-fpsHintLbl.LayoutOrder = 2
-fpsHintLbl.Parent = cpuSubInner
-
--- ── Save CPU overlay (the near-blank screen shown when active) ──
-local cpuOverlay = Instance.new("CanvasGroup")
-cpuOverlay.Size = UDim2.new(1, 0, 1, 0)
-cpuOverlay.Position = UDim2.new(0, 0, 0, 0)
-cpuOverlay.BackgroundColor3 = Color3.fromRGB(6, 6, 7)
-cpuOverlay.GroupTransparency = 1
-cpuOverlay.ZIndex = 50
-cpuOverlay.Visible = false
-cpuOverlay.Parent = gui
-
-local cpuOverlayLayout = Instance.new("UIListLayout", cpuOverlay)
-cpuOverlayLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-cpuOverlayLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-cpuOverlayLayout.Padding = UDim.new(0, 6)
-
--- Info card on the overlay
-local cpuInfoCard = Instance.new("Frame")
-cpuInfoCard.Size = UDim2.new(0, 300, 0, 0)
-cpuInfoCard.AutomaticSize = Enum.AutomaticSize.Y
-cpuInfoCard.BackgroundColor3 = Color3.fromRGB(10, 10, 13)
-cpuInfoCard.BorderSizePixel = 0 cpuInfoCard.Parent = cpuOverlay
-Instance.new("UICorner", cpuInfoCard).CornerRadius = UDim.new(0, 14)
-local cpuCardStroke = Instance.new("UIStroke", cpuInfoCard)
-cpuCardStroke.Color = Color3.fromRGB(30, 30, 38) cpuCardStroke.Thickness = 1
-local cpuCardLayout = Instance.new("UIListLayout", cpuInfoCard)
-cpuCardLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-cpuCardLayout.Padding = UDim.new(0, 4)
-local cpuCardPad = Instance.new("UIPadding", cpuInfoCard)
-cpuCardPad.PaddingTop = UDim.new(0, 20) cpuCardPad.PaddingBottom = UDim.new(0, 20)
-cpuCardPad.PaddingLeft = UDim.new(0, 24) cpuCardPad.PaddingRight = UDim.new(0, 24)
-
-local cpuUserLbl = Instance.new("TextLabel")
-cpuUserLbl.Size = UDim2.new(1, 0, 0, 14)
-cpuUserLbl.BackgroundTransparency = 1
-cpuUserLbl.Text = player.Name
-cpuUserLbl.TextColor3 = Color3.fromRGB(72, 72, 88)
-cpuUserLbl.TextSize = 11 cpuUserLbl.Font = Enum.Font.Gotham
-cpuUserLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuUserLbl.Parent = cpuInfoCard
-
-local cpuEarnedLbl = Instance.new("TextLabel")
-cpuEarnedLbl.Size = UDim2.new(1, 0, 0, 36)
-cpuEarnedLbl.BackgroundTransparency = 1
-cpuEarnedLbl.Text = "$0"
-cpuEarnedLbl.TextColor3 = Color3.fromRGB(190, 190, 200)
-cpuEarnedLbl.TextSize = 28 cpuEarnedLbl.Font = Enum.Font.GothamBold
-cpuEarnedLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuEarnedLbl.Parent = cpuInfoCard
-
-local cpuPlusLbl = Instance.new("TextLabel")
-cpuPlusLbl.Size = UDim2.new(1, 0, 0, 14)
-cpuPlusLbl.BackgroundTransparency = 1
-cpuPlusLbl.Text = "+ $0"
-cpuPlusLbl.TextColor3 = Color3.fromRGB(52, 52, 68)
-cpuPlusLbl.TextSize = 12 cpuPlusLbl.Font = Enum.Font.Gotham
-cpuPlusLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuPlusLbl.Parent = cpuInfoCard
-
-local cpuTimeLbl = Instance.new("TextLabel")
-cpuTimeLbl.Size = UDim2.new(1, 0, 0, 30)
-cpuTimeLbl.BackgroundTransparency = 1
-cpuTimeLbl.Text = "00:00:00"
-cpuTimeLbl.TextColor3 = Color3.fromRGB(170, 170, 185)
-cpuTimeLbl.TextSize = 18 cpuTimeLbl.Font = Enum.Font.GothamBold
-cpuTimeLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuTimeLbl.Parent = cpuInfoCard
-
-local cpuActionLbl = Instance.new("TextLabel")
-cpuActionLbl.Size = UDim2.new(1, 0, 0, 14)
-cpuActionLbl.BackgroundTransparency = 1
-cpuActionLbl.Text = "breaking atm"
-cpuActionLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
-cpuActionLbl.TextSize = 10 cpuActionLbl.Font = Enum.Font.Gotham
-cpuActionLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuActionLbl.Parent = cpuInfoCard
-
-local cpuFooterLbl = Instance.new("TextLabel")
-cpuFooterLbl.Size = UDim2.new(1, 0, 0, 12)
-cpuFooterLbl.BackgroundTransparency = 1
-cpuFooterLbl.Text = "discord.gg/iku — @snuffing on discord"
-cpuFooterLbl.TextColor3 = Color3.fromRGB(36, 36, 48)
-cpuFooterLbl.TextSize = 9 cpuFooterLbl.Font = Enum.Font.Gotham
-cpuFooterLbl.TextXAlignment = Enum.TextXAlignment.Center
-cpuFooterLbl.Parent = cpuInfoCard
-
--- ── Save CPU logic ──
-local _cpuHeartbeat = nil
-local _prevFpsCap = 60
-
-local function setLowGFX(enabled)
-	pcall(function()
-		game:GetService("ReplicatedStorage")
-			:WaitForChild("MainEvent")
-			:FireServer("UpdateSingleSetting", "LowGFX", enabled)
-	end)
-end
-
-local function formatTimeCPU(s)
-	return string.format("%02d:%02d:%02d", math.floor(s/3600), math.floor((s%3600)/60), s%60)
-end
-
-local function enterSaveCPU()
-	getgenv().SAVE_CPU_ENABLED = true
-	-- Fade main UI out
-	if main:IsA("CanvasGroup") then
-		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 1}):Play()
-	end
-	-- Show overlay
-	cpuOverlay.Visible = true
-	cpuOverlay.GroupTransparency = 1
-	TweenService:Create(cpuOverlay, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 0}):Play()
-	-- Apply FPS cap + Low GFX
-	_prevFpsCap = 60
-	pcall(function() _prevFpsCap = (getfpscap and getfpscap()) or 60 end)
-	pcall(function() setfpscap(getgenv().SAVE_CPU_FPS) end)
-	setLowGFX(true)
-	-- Overlay update loop
-	if _cpuHeartbeat then _cpuHeartbeat:Disconnect() end
-	local lastEarned = totalEarned
-	_cpuHeartbeat = RunService.Heartbeat:Connect(function()
-		pcall(function()
-			local elapsed = getElapsed()
-			local gained = totalEarned - lastEarned
-			cpuEarnedLbl.Text = formatMoney(totalEarned)
-			cpuPlusLbl.Text = "+ " .. formatMoney(gained)
-			cpuTimeLbl.Text = formatTimeCPU(elapsed)
-			cpuActionLbl.Text = currentAction:lower()
-		end)
-	end)
-end
-
-local function exitSaveCPU()
-	getgenv().SAVE_CPU_ENABLED = false
-	-- Fade overlay out
-	TweenService:Create(cpuOverlay, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 1}):Play()
-	task.delay(0.36, function() cpuOverlay.Visible = false end)
-	-- Restore main UI
-	if main:IsA("CanvasGroup") then
-		TweenService:Create(main, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {GroupTransparency = 0}):Play()
-	end
-	-- Restore FPS + GFX
-	pcall(function() setfpscap(_prevFpsCap) end)
-	setLowGFX(false)
-	if _cpuHeartbeat then _cpuHeartbeat:Disconnect() _cpuHeartbeat = nil end
-end
-
-local function toggleCPU(on)
-	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	if on then
-		TweenService:Create(cpuTrack, ti, {BackgroundColor3 = Color3.fromRGB(22, 160, 60)}):Play()
-		TweenService:Create(cpuThumb, ti, {Position = UDim2.new(1, -19, 0.5, -8), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-		cpuTogLbl.Text = "Save CPU Active"
-		cpuTogLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
-		cpuSubLbl.Text = "Save CPU is ON — rendering reduced to " .. getgenv().SAVE_CPU_FPS .. " FPS"
-		cpuFpsLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
-		enterSaveCPU()
-		-- Collapse submenu
-		TweenService:Create(cpuSubmenu, TweenInfo.new(0.22, Enum.EasingStyle.Quint), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-	else
-		TweenService:Create(cpuTrack, ti, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
-		TweenService:Create(cpuThumb, ti, {Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = Color3.fromRGB(82, 82, 105)}):Play()
-		cpuTogLbl.Text = "Enable Save CPU"
-		cpuTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
-		cpuSubLbl.Text = "Reduces rendering while keeping auto farming running — OFF"
-		cpuFpsLbl.TextColor3 = Color3.fromRGB(48, 48, 62)
-		exitSaveCPU()
-	end
-end
-
--- Open/close submenu on title click
-local cpuSubmenuOpen = false
-cpuTitleRow.MouseButton1Click = nil  -- title isn't a button so we use a transparent overlay
-local cpuTitleBtn = Instance.new("TextButton")
-cpuTitleBtn.Size = UDim2.new(1, 0, 0, 20)
-cpuTitleBtn.BackgroundTransparency = 1
-cpuTitleBtn.Text = "" cpuTitleBtn.ZIndex = 5
-cpuTitleBtn.Parent = cpuTitleRow
-cpuTitleBtn.MouseButton1Click:Connect(function()
-	if getgenv().SAVE_CPU_ENABLED then return end
-	cpuSubmenuOpen = not cpuSubmenuOpen
-	local targetH = cpuSubmenuOpen and (cpuSubLayout.AbsoluteContentSize.Y + 24) or 0
-	TweenService:Create(cpuSubmenu, TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-		{Size = UDim2.new(1, 0, 0, targetH)}):Play()
-end)
-
-cpuTrack.MouseButton1Click:Connect(function()
-	toggleCPU(not getgenv().SAVE_CPU_ENABLED)
-end)
-
--- Store toggleCPU for settings restore
-getgenv()._toggleSaveCPU = toggleCPU
-end -- save cpu scope
-
+buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 
 makeSpacer(autoCard, 23, 3) makeDivider(autoCard, 24) makeSpacer(autoCard, 25, 3)
-
--- ══ WEBHOOK SECTION ══
-do
-	local whTitleRow = Instance.new("Frame")
-	whTitleRow.Size = UDim2.new(1, 0, 0, 18)
-	whTitleRow.BackgroundTransparency = 1
-	whTitleRow.LayoutOrder = 15
-	whTitleRow.Parent = autoCard
-	local whIconLbl = Instance.new("TextLabel")
-	whIconLbl.Size = UDim2.new(0, 14, 1, 0)
-	whIconLbl.BackgroundTransparency = 1
-	whIconLbl.Text = "🔔"
-	whIconLbl.TextSize = 11
-	whIconLbl.Font = Enum.Font.GothamBold
-	whIconLbl.TextXAlignment = Enum.TextXAlignment.Center
-	whIconLbl.TextYAlignment = Enum.TextYAlignment.Center
-	whIconLbl.Parent = whTitleRow
-	local whTitleLbl = Instance.new("TextLabel")
-	whTitleLbl.Size = UDim2.new(1, -20, 1, 0)
-	whTitleLbl.Position = UDim2.new(0, 20, 0, 0)
-	whTitleLbl.BackgroundTransparency = 1
-	whTitleLbl.Text = "Discord Webhook"
-	whTitleLbl.TextColor3 = Color3.fromRGB(205, 205, 215)
-	whTitleLbl.TextSize = 12
-	whTitleLbl.Font = Enum.Font.GothamBold
-	whTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
-	whTitleLbl.TextYAlignment = Enum.TextYAlignment.Center
-	whTitleLbl.Parent = whTitleRow
-end
-
-makeSpacer(autoCard, 16, 5)
-
--- URL input box
-local whInputWrap = Instance.new("Frame")
-whInputWrap.Size = UDim2.new(1, 0, 0, 32)
-whInputWrap.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
-whInputWrap.BorderSizePixel = 0
-whInputWrap.LayoutOrder = 17
-whInputWrap.Parent = autoCard
-Instance.new("UICorner", whInputWrap).CornerRadius = UDim.new(0, 7)
-whInputStroke = Instance.new("UIStroke", whInputWrap)
-whInputStroke.Color = Color3.fromRGB(34, 34, 46)
-whInputStroke.Thickness = 1
-
-whInput = Instance.new("TextBox")
-whInput.Size = UDim2.new(1, -12, 1, 0)
-whInput.Position = UDim2.new(0, 10, 0, 0)
-whInput.BackgroundTransparency = 1
-whInput.Text = ""
-whInput.PlaceholderText = "Paste Discord webhook URL..."
-whInput.PlaceholderColor3 = Color3.fromRGB(52, 52, 68)
-whInput.TextColor3 = Color3.fromRGB(195, 195, 210)
-whInput.TextSize = 10
-whInput.Font = Enum.Font.Gotham
-whInput.TextXAlignment = Enum.TextXAlignment.Left
-whInput.TextYAlignment = Enum.TextYAlignment.Center
-whInput.ClearTextOnFocus = false
-whInput.TextTruncate = Enum.TextTruncate.AtEnd
-whInput.ClipsDescendants = true
-whInput.Parent = whInputWrap
-
-whInput.Focused:Connect(function()
-	TweenService:Create(whInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(34, 100, 200), Thickness = 1.5}):Play()
-end)
-
-makeSpacer(autoCard, 18, 5)
-
--- Toggle + status row
-local whCtrlRow = Instance.new("Frame")
-whCtrlRow.Size = UDim2.new(1, 0, 0, 22)
-whCtrlRow.BackgroundTransparency = 1
-whCtrlRow.LayoutOrder = 19
-whCtrlRow.Parent = autoCard
-
-local whTrack = Instance.new("TextButton")
-whTrack.Size = UDim2.new(0, 36, 0, 18)
-whTrack.Position = UDim2.new(0, 0, 0.5, -9)
-whTrack.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
-whTrack.Text = ""
-whTrack.BorderSizePixel = 0
-whTrack.Parent = whCtrlRow
-Instance.new("UICorner", whTrack).CornerRadius = UDim.new(1, 0)
-
-local whThumb = Instance.new("Frame")
-whThumb.Size = UDim2.new(0, 12, 0, 12)
-whThumb.Position = UDim2.new(0, 3, 0.5, -6)
-whThumb.BackgroundColor3 = Color3.fromRGB(82, 82, 105)
-whThumb.BorderSizePixel = 0
-whThumb.Parent = whTrack
-Instance.new("UICorner", whThumb).CornerRadius = UDim.new(1, 0)
-
-local whTogLbl = Instance.new("TextLabel")
-whTogLbl.Size = UDim2.new(0, 110, 1, 0)
-whTogLbl.Position = UDim2.new(0, 44, 0, 0)
-whTogLbl.BackgroundTransparency = 1
-whTogLbl.Text = "Notifications OFF"
-whTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
-whTogLbl.TextSize = 10
-whTogLbl.Font = Enum.Font.Gotham
-whTogLbl.TextXAlignment = Enum.TextXAlignment.Left
-whTogLbl.TextYAlignment = Enum.TextYAlignment.Center
-whTogLbl.Parent = whCtrlRow
-
-whStatusDot = Instance.new("Frame")
-whStatusDot.Size = UDim2.new(0, 7, 0, 7)
-whStatusDot.AnchorPoint = Vector2.new(1, 0.5)
-whStatusDot.Position = UDim2.new(1, -56, 0.5, 0)
-whStatusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
-whStatusDot.BorderSizePixel = 0
-whStatusDot.Parent = whCtrlRow
-Instance.new("UICorner", whStatusDot).CornerRadius = UDim.new(1, 0)
-
-whStatusTxt = Instance.new("TextLabel")
-whStatusTxt.Size = UDim2.new(0, 46, 1, 0)
-whStatusTxt.AnchorPoint = Vector2.new(1, 0)
-whStatusTxt.Position = UDim2.new(1, 0, 0, 0)
-whStatusTxt.BackgroundTransparency = 1
-whStatusTxt.Text = "Not set"
-whStatusTxt.TextColor3 = Color3.fromRGB(55, 55, 70)
-whStatusTxt.TextSize = 9
-whStatusTxt.Font = Enum.Font.GothamBold
-whStatusTxt.TextXAlignment = Enum.TextXAlignment.Right
-whStatusTxt.TextYAlignment = Enum.TextYAlignment.Center
-whStatusTxt.Parent = whCtrlRow
-
-makeSpacer(autoCard, 20, 6)
-
--- Send Test button
-whTestBtn = Instance.new("TextButton")
-whTestBtn.Size = UDim2.new(1, 0, 0, 28)
-whTestBtn.BackgroundColor3 = Color3.fromRGB(20, 45, 88)
-whTestBtn.Text = "  Send Test Webhook"
-whTestBtn.TextColor3 = Color3.fromRGB(100, 155, 230)
-whTestBtn.TextSize = 11
-whTestBtn.Font = Enum.Font.GothamBold
-whTestBtn.BorderSizePixel = 0
-whTestBtn.LayoutOrder = 21
-whTestBtn.Parent = autoCard
-Instance.new("UICorner", whTestBtn).CornerRadius = UDim.new(0, 7)
-do
-	local s = Instance.new("UIStroke", whTestBtn)
-	s.Color = Color3.fromRGB(38, 82, 160)
-	s.Thickness = 1
-end
-
-makeSpacer(autoCard, 22, 4)
-
--- ── Webhook state ──
-getgenv().WEBHOOK_ENABLED = false
-getgenv().WEBHOOK_URL = ""
-
-local function getWalletAmount()
-	local bp = player:FindFirstChild("Backpack")
-	if not bp then return "?" end
-	local w = bp:FindFirstChild("[Wallet]")
-	if not w then return "?" end
-	local h = w:FindFirstChild("Handle")
-	if not h then return "?" end
-	local bb = h:FindFirstChildOfClass("BillboardGui")
-	if not bb then return "?" end
-	local tl = bb:FindFirstChildOfClass("TextLabel")
-	return (tl and tl.Text ~= "") and tl.Text or "?"
-end
-
-local function getLicenseTier()
-	local s = tonumber(getgenv and getgenv().LICENSE_TIMELEFT or 0) or 0
-	if s < 3600 then return "Free Trial"
-	elseif s <= 86400*4 then return "3-Day"
-	elseif s <= 86400*8 then return "Weekly"
-	elseif s <= 86400*32 then return "Monthly"
-	else return "Premium" end
-end
-
-local function jsonEsc(s)
-	return tostring(s):gsub('\\','\\\\'):gsub('"','\\"'):gsub('\n','\\n'):gsub('\r','\\r')
-end
-
--- Resolves the player's actual avatar headshot CDN URL via the Roblox Thumbnails API.
--- www.roblox.com/headshot-thumbnail redirects to an HTML page — Discord won't render it.
--- thumbnails.roblox.com returns JSON with the real imageUrl that Discord can embed directly.
-local _cachedAvatarUrl = nil
-local function resolveAvatarUrl()
-	if _cachedAvatarUrl then return _cachedAvatarUrl end
-	local apiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. player.UserId .. "&size=420x420&format=Png&isCircular=false"
-	local ok, result = pcall(function()
-		local req = (syn and syn.request) or (http and http.request) or request
-		return req({Url = apiUrl, Method = "GET"})
-	end)
-	if ok and result and result.Body then
-		-- Parse imageUrl from JSON: {"data":[{"targetId":...,"state":"Completed","imageUrl":"https://..."}]}
-		local imageUrl = result.Body:match('"imageUrl":"(https://[^"]+)"')
-		if imageUrl then
-			_cachedAvatarUrl = imageUrl
-			return imageUrl
-		end
-	end
-	-- Fallback: direct CDN pattern that usually works without redirect
-	return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
-end
-
-local function buildEmbed(title, desc, color, isTest)
-	local elapsed = getElapsed()
-	local mins = math.max(elapsed / 60, 0.016)
-	local rate = math.floor(totalEarned / mins)
-	local wallet = getWalletAmount()
-	local tier = getLicenseTier()
-	local avatarUrl = resolveAvatarUrl()
-	local placeId = tostring(game.PlaceId)
-	local jobId = tostring(game.JobId)
-	local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time())
-
-	local fields = {
-		{n="👤  Player",   v=player.DisplayName .. "  (@" .. player.Name .. ")",  i=true},
-		{n="🆔  User ID",  v=tostring(player.UserId),                              i=true},
-		{n="🏅  License",  v=tier,                                                 i=true},
-		{n="💰  Wallet",   v=wallet,                                               i=true},
-		{n="💵  Earned",   v=formatMoney(totalEarned),                             i=true},
-		{n="📈  Rate",     v=formatMoney(rate) .. "/min",                          i=true},
-		{n="⏱  Session",  v=formatTime(elapsed),                                  i=true},
-		{n="🎮  Place ID", v=placeId,                                              i=true},
-		{n="🌐  Job ID",   v=jobId:sub(1,18) .. (jobId:len() > 18 and "..." or ""), i=true},
-	}
-
-	local fArr = {}
-	for _, f in ipairs(fields) do
-		table.insert(fArr, '{"name":"' .. jsonEsc(f.n) .. '","value":"' .. jsonEsc(f.v) .. '","inline":' .. (f.i and "true" or "false") .. '}')
-	end
-
-	local embedTitle = (isTest and "[TEST] " or "") .. title
-	return '{"embeds":[{"title":"' .. jsonEsc(embedTitle)
-		.. '","description":"' .. jsonEsc(desc)
-		.. '","color":' .. tostring(color)
-		.. ',"thumbnail":{"url":"' .. jsonEsc(avatarUrl) .. '"}'
-		.. ',"fields":[' .. table.concat(fArr, ',') .. ']'
-		.. ',"footer":{"text":"ATM Farmer  \xc2\xa7  Made by Wraith"}'
-		.. ',"timestamp":"' .. stamp .. '"'
-		.. '}]}'
-end
-
-local function setWhStatus(col, txt, strokeCol)
-	TweenService:Create(whStatusDot, TweenInfo.new(0.2), {BackgroundColor3 = col}):Play()
-	whStatusTxt.Text = txt
-	whStatusTxt.TextColor3 = col
-	if strokeCol then
-		TweenService:Create(whInputStroke, TweenInfo.new(0.2), {Color = strokeCol}):Play()
-	end
-end
-
-local function sendWebhook(title, desc, color, isTest)
-	local url = getgenv().WEBHOOK_URL
-	if not url or url == "" then return end
-	local body = buildEmbed(title, desc, color, isTest)
-	task.spawn(function()
-		local ok = pcall(function()
-			local req = (syn and syn.request) or (http and http.request) or request
-			req({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = body})
-		end)
-		if ok then
-			setWhStatus(Color3.fromRGB(34, 197, 94), "Sent \xe2\x9c\x93", nil)
-		else
-			setWhStatus(Color3.fromRGB(210, 55, 55), "Failed", nil)
-		end
-		task.delay(4, function()
-			local valid = getgenv().WEBHOOK_URL ~= ""
-			local c = valid and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(55, 55, 70)
-			local t = valid and "Connected" or "Not set"
-			setWhStatus(c, t, nil)
-		end)
-	end)
-end
-
--- Store reference so toggleBtn handler can call it
-getgenv()._wh_send = sendWebhook
--- Pre-warm avatar URL cache in background so first webhook fires instantly
-task.spawn(resolveAvatarUrl)
-
-local function validateUrl()
-	local url = whInput.Text
-	getgenv().WEBHOOK_URL = url
-	local valid = url:match("^https://discord%.com/api/webhooks/")
-		or url:match("^https://ptb%.discord%.com/api/webhooks/")
-		or url:match("^https://canary%.discord%.com/api/webhooks/")
-	if valid then
-		setWhStatus(Color3.fromRGB(34, 197, 94), "Connected", Color3.fromRGB(30, 75, 30))
-	elseif url == "" then
-		setWhStatus(Color3.fromRGB(55, 55, 70), "Not set", Color3.fromRGB(34, 34, 46))
-	else
-		setWhStatus(Color3.fromRGB(210, 55, 55), "Invalid", Color3.fromRGB(80, 28, 28))
-	end
-end
-
-whInput.FocusLost:Connect(validateUrl)
-
-local whEnabled = false
-local function setWebhookToggle(on)
-	whEnabled = on
-	getgenv().WEBHOOK_ENABLED = on
-	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	if on then
-		TweenService:Create(whTrack, ti, {BackgroundColor3 = Color3.fromRGB(22, 160, 60)}):Play()
-		TweenService:Create(whThumb, ti, {Position = UDim2.new(1, -15, 0.5, -6), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-		whTogLbl.Text = "Notifications ON"
-		whTogLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
-	else
-		TweenService:Create(whTrack, ti, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
-		TweenService:Create(whThumb, ti, {Position = UDim2.new(0, 3, 0.5, -6), BackgroundColor3 = Color3.fromRGB(82, 82, 105)}):Play()
-		whTogLbl.Text = "Notifications OFF"
-		whTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
-	end
-end
-
-whTrack.MouseButton1Click:Connect(function() setWebhookToggle(not whEnabled) end)
-
-whTestBtn.MouseButton1Click:Connect(function()
-	if whInput.Text == "" then
-		whInput.PlaceholderText = "\xe2\x9a\xa0  Paste a webhook URL first!"
-		task.delay(2.5, function() whInput.PlaceholderText = "Paste Discord webhook URL..." end)
-		return
-	end
-	local origTxt, origBg = whTestBtn.Text, whTestBtn.BackgroundColor3
-	whTestBtn.Text = "  Sending..."
-	whTestBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 36)
-	sendWebhook("Test Notification", "Webhook is connected and working. ATM Farmer notifications are active.", 0x22C55E, true)
-	task.delay(1.5, function()
-		whTestBtn.Text = "  \xe2\x9c\x93 Sent!"
-		whTestBtn.BackgroundColor3 = Color3.fromRGB(16, 72, 38)
-		task.delay(2.2, function()
-			whTestBtn.Text = origTxt
-			whTestBtn.BackgroundColor3 = origBg
-		end)
-	end)
-end)
-
+buildWebhookUI(autoCard, makeSpacer)
+makeSpacer(autoCard, 26, 3) makeDivider(autoCard, 27) makeSpacer(autoCard, 28, 3)
 
 local function animateToggle(track, thumb, on)
 	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -2095,7 +1679,6 @@ hfTrack.MouseButton1Click:Connect(function()
 end)
 
 -- ══ STATS CARD ══
-do
 local statsCard = makeCard(5)
 makeCardHeader(statsCard, 1, 92424302331652, "Stats", true)
 makeSpacer(statsCard, 2, 9)
@@ -2105,9 +1688,9 @@ Instance.new("UICorner", earnCell).CornerRadius = UDim.new(0, 7)
 Instance.new("UIStroke", earnCell).Color = Color3.fromRGB(26, 26, 33)
 
 local earnLblT = Instance.new("TextLabel") earnLblT.Size = UDim2.new(0.5, 0, 0, 11) earnLblT.Position = UDim2.new(0, 7, 0, 5) earnLblT.BackgroundTransparency = 1 earnLblT.Text = "Total Earned" earnLblT.TextColor3 = Color3.fromRGB(58,58,76) earnLblT.TextSize = 9 earnLblT.Font = Enum.Font.Gotham earnLblT.TextXAlignment = Enum.TextXAlignment.Left earnLblT.Parent = earnCell
-earningsBig = Instance.new("TextLabel") earningsBig.Size = UDim2.new(0.5, 0, 0, 20) earningsBig.Position = UDim2.new(0, 7, 0, 18) earningsBig.BackgroundTransparency = 1 earningsBig.Text = "$0" earningsBig.TextColor3 = Color3.fromRGB(25,190,75) earningsBig.TextSize = 15 earningsBig.Font = Enum.Font.GothamBold earningsBig.TextXAlignment = Enum.TextXAlignment.Left earningsBig.Parent = earnCell
-runtimeLbl = Instance.new("TextLabel") runtimeLbl.Size = UDim2.new(0.5, -7, 0, 11) runtimeLbl.Position = UDim2.new(0.5, 0, 0, 5) runtimeLbl.BackgroundTransparency = 1 runtimeLbl.Text = "Not started" runtimeLbl.TextColor3 = Color3.fromRGB(58,58,76) runtimeLbl.TextSize = 9 runtimeLbl.Font = Enum.Font.Gotham runtimeLbl.TextXAlignment = Enum.TextXAlignment.Right runtimeLbl.Parent = earnCell
-earnRateLbl = Instance.new("TextLabel") earnRateLbl.Size = UDim2.new(0.5, -7, 0, 20) earnRateLbl.Position = UDim2.new(0.5, 0, 0, 18) earnRateLbl.BackgroundTransparency = 1 earnRateLbl.Text = "$0/min" earnRateLbl.TextColor3 = Color3.fromRGB(58,58,76) earnRateLbl.TextSize = 11 earnRateLbl.Font = Enum.Font.GothamBold earnRateLbl.TextXAlignment = Enum.TextXAlignment.Right earnRateLbl.Parent = earnCell
+local earningsBig = Instance.new("TextLabel") earningsBig.Size = UDim2.new(0.5, 0, 0, 20) earningsBig.Position = UDim2.new(0, 7, 0, 18) earningsBig.BackgroundTransparency = 1 earningsBig.Text = "$0" earningsBig.TextColor3 = Color3.fromRGB(25,190,75) earningsBig.TextSize = 15 earningsBig.Font = Enum.Font.GothamBold earningsBig.TextXAlignment = Enum.TextXAlignment.Left earningsBig.Parent = earnCell
+local runtimeLbl = Instance.new("TextLabel") runtimeLbl.Size = UDim2.new(0.5, -7, 0, 11) runtimeLbl.Position = UDim2.new(0.5, 0, 0, 5) runtimeLbl.BackgroundTransparency = 1 runtimeLbl.Text = "Not started" runtimeLbl.TextColor3 = Color3.fromRGB(58,58,76) runtimeLbl.TextSize = 9 runtimeLbl.Font = Enum.Font.Gotham runtimeLbl.TextXAlignment = Enum.TextXAlignment.Right runtimeLbl.Parent = earnCell
+local earnRateLbl = Instance.new("TextLabel") earnRateLbl.Size = UDim2.new(0.5, -7, 0, 20) earnRateLbl.Position = UDim2.new(0.5, 0, 0, 18) earnRateLbl.BackgroundTransparency = 1 earnRateLbl.Text = "$0/min" earnRateLbl.TextColor3 = Color3.fromRGB(58,58,76) earnRateLbl.TextSize = 11 earnRateLbl.Font = Enum.Font.GothamBold earnRateLbl.TextXAlignment = Enum.TextXAlignment.Right earnRateLbl.Parent = earnCell
 
 makeSpacer(statsCard, 4, 6)
 local statsGrid = Instance.new("Frame") statsGrid.Size = UDim2.new(1, 0, 0, 74) statsGrid.BackgroundTransparency = 1 statsGrid.LayoutOrder = 5 statsGrid.Parent = statsCard
@@ -2121,182 +1704,25 @@ local function makeStatCell(order, label)
 	return vL
 end
 
-punchVal    = makeStatCell(1, "Total Punches")
-dropsVal    = makeStatCell(2, "Drops Collected")
-skippedVal  = makeStatCell(3, "ATMs Skipped")
-earnRateVal = makeStatCell(4, "Earn Rate")
+local punchVal    = makeStatCell(1, "Total Punches")
+local dropsVal    = makeStatCell(2, "Drops Collected")
+local skippedVal  = makeStatCell(3, "ATMs Skipped")
+local earnRateVal = makeStatCell(4, "Earn Rate")
 earnRateVal.TextColor3 = Color3.fromRGB(25, 190, 75)
-end -- stats scope
 
 local actionCard = makeCard(6)
 makeCardHeader(actionCard, 1, "▶", "Current Action")
 makeSpacer(actionCard, 2, 5)
-actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 13) actionLbl.BackgroundTransparency = 1 actionLbl.Text = "Press Start to begin farming." actionLbl.TextColor3 = Color3.fromRGB(88,88,112) actionLbl.TextSize = 10 actionLbl.Font = Enum.Font.Gotham actionLbl.TextXAlignment = Enum.TextXAlignment.Left actionLbl.TextTruncate = Enum.TextTruncate.AtEnd actionLbl.LayoutOrder = 3 actionLbl.Parent = actionCard
+local actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 13) actionLbl.BackgroundTransparency = 1 actionLbl.Text = "Press Start to begin farming." actionLbl.TextColor3 = Color3.fromRGB(88,88,112) actionLbl.TextSize = 10 actionLbl.Font = Enum.Font.Gotham actionLbl.TextXAlignment = Enum.TextXAlignment.Left actionLbl.TextTruncate = Enum.TextTruncate.AtEnd actionLbl.LayoutOrder = 3 actionLbl.Parent = actionCard
 
 local btnWrap = Instance.new("Frame") btnWrap.Size = UDim2.new(1, 0, 0, 44) btnWrap.BackgroundTransparency = 1 btnWrap.LayoutOrder = 7 btnWrap.Parent = scroll
-toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
+local toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
 
-
--- ══ SAVE SETTINGS CARD ══
-do
-local saveCard = makeCard(9)
-makeCardHeader(saveCard, 1, "💾", "Settings")
-makeSpacer(saveCard, 2, 8)
-
-local saveStatusLbl = Instance.new("TextLabel")
-saveStatusLbl.Size = UDim2.new(1, 0, 0, 12)
-saveStatusLbl.BackgroundTransparency = 1
-saveStatusLbl.Text = _cfgLoaded and "Loaded saved settings." or "No saved settings found."
-saveStatusLbl.TextColor3 = _cfgLoaded and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(58, 58, 75)
-saveStatusLbl.TextSize = 9 saveStatusLbl.Font = Enum.Font.Gotham
-saveStatusLbl.TextXAlignment = Enum.TextXAlignment.Left
-saveStatusLbl.LayoutOrder = 3 saveStatusLbl.Parent = saveCard
-
-makeSpacer(saveCard, 4, 6)
-
--- Save + Reset button row
-local saveBtnRow = Instance.new("Frame")
-saveBtnRow.Size = UDim2.new(1, 0, 0, 32)
-saveBtnRow.BackgroundTransparency = 1
-saveBtnRow.LayoutOrder = 5 saveBtnRow.Parent = saveCard
-local saveBtnLayout = Instance.new("UIListLayout", saveBtnRow)
-saveBtnLayout.FillDirection = Enum.FillDirection.Horizontal
-saveBtnLayout.Padding = UDim.new(0, 8)
-saveBtnLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-
-local saveBtn = Instance.new("TextButton")
-saveBtn.Size = UDim2.new(0.6, -4, 1, 0)
-saveBtn.BackgroundColor3 = Color3.fromRGB(18, 60, 28)
-saveBtn.Text = "💾  Save Settings"
-saveBtn.TextColor3 = Color3.fromRGB(25, 190, 75)
-saveBtn.TextSize = 11 saveBtn.Font = Enum.Font.GothamBold
-saveBtn.BorderSizePixel = 0 saveBtn.Parent = saveBtnRow
-Instance.new("UICorner", saveBtn).CornerRadius = UDim.new(0, 8)
-local saveBtnStroke = Instance.new("UIStroke", saveBtn)
-saveBtnStroke.Color = Color3.fromRGB(22, 80, 38) saveBtnStroke.Thickness = 1
-
-local resetBtn = Instance.new("TextButton")
-resetBtn.Size = UDim2.new(0.4, -4, 1, 0)
-resetBtn.BackgroundColor3 = Color3.fromRGB(38, 14, 14)
-resetBtn.Text = "🗑  Reset"
-resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
-resetBtn.TextSize = 11 resetBtn.Font = Enum.Font.GothamBold
-resetBtn.BorderSizePixel = 0 resetBtn.Parent = saveBtnRow
-Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 8)
-local resetBtnStroke = Instance.new("UIStroke", resetBtn)
-resetBtnStroke.Color = Color3.fromRGB(70, 22, 22) resetBtnStroke.Thickness = 1
-
-makeSpacer(saveCard, 6, 4)
-
-saveBtn.MouseButton1Click:Connect(function()
-	local ok = cfgSave()
-	if ok then
-		saveStatusLbl.Text = "Settings saved successfully."
-		saveStatusLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
-		saveBtn.Text = "✓  Saved!"
-		task.delay(2, function()
-			if saveBtn and saveBtn.Parent then saveBtn.Text = "💾  Save Settings" end
-		end)
-	else
-		saveStatusLbl.Text = "Failed to save settings."
-		saveStatusLbl.TextColor3 = Color3.fromRGB(210, 55, 55)
-	end
-end)
-
-local resetConfirm = false
-resetBtn.MouseButton1Click:Connect(function()
-	if not resetConfirm then
-		resetConfirm = true
-		resetBtn.Text = "Confirm?"
-		resetBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-		task.delay(3, function()
-			resetConfirm = false
-			if resetBtn and resetBtn.Parent then
-				resetBtn.Text = "🗑  Reset"
-				resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
-			end
-		end)
-	else
-		resetConfirm = false
-		pcall(function() delfile(CFG_KEY .. ".json") end)
-		saveStatusLbl.Text = "Settings reset to defaults."
-		saveStatusLbl.TextColor3 = Color3.fromRGB(180, 140, 40)
-		resetBtn.Text = "🗑  Reset"
-		resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
-	end
-end)
-end -- save settings scope
-end -- automation+webhook+savecpu scope
-
--- ══ CREDITS ══
-do
-local credWrap = Instance.new("Frame")
-credWrap.Size = UDim2.new(1, 0, 0, 26)
-credWrap.BackgroundTransparency = 1
-credWrap.LayoutOrder = 10
-credWrap.Parent = scroll
-local credLayout = Instance.new("UIListLayout", credWrap)
-credLayout.FillDirection = Enum.FillDirection.Horizontal
-credLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-credLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-credLayout.Padding = UDim.new(0, 5)
-
-local function makeDot()
-	local d = Instance.new("Frame")
-	d.Size = UDim2.new(0, 3, 0, 3)
-	d.BackgroundColor3 = Color3.fromRGB(36, 36, 50)
-	d.BorderSizePixel = 0
-	d.Parent = credWrap
-	Instance.new("UICorner", d).CornerRadius = UDim.new(1, 0)
-end
-
-local credMade = Instance.new("TextLabel")
-credMade.Size = UDim2.new(0, 0, 0, 14)
-credMade.AutomaticSize = Enum.AutomaticSize.X
-credMade.BackgroundTransparency = 1
-credMade.Text = "Made by Wraith"
-credMade.TextColor3 = Color3.fromRGB(42, 42, 56)
-credMade.TextSize = 9
-credMade.Font = Enum.Font.GothamBold
-credMade.TextXAlignment = Enum.TextXAlignment.Center
-credMade.Parent = credWrap
-
-makeDot()
-
-local credLink = Instance.new("TextButton")
-credLink.Size = UDim2.new(0, 0, 0, 14)
-credLink.AutomaticSize = Enum.AutomaticSize.X
-credLink.BackgroundTransparency = 1
-credLink.Text = "discord.gg/uCUSZeuM48"
-credLink.TextColor3 = Color3.fromRGB(42, 42, 56)
-credLink.TextSize = 9
-credLink.Font = Enum.Font.Gotham
-credLink.BorderSizePixel = 0
-credLink.TextXAlignment = Enum.TextXAlignment.Center
-credLink.Parent = credWrap
-
-credLink.MouseEnter:Connect(function()
-	TweenService:Create(credLink, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(80, 105, 165)}):Play()
-end)
-credLink.MouseLeave:Connect(function()
-	TweenService:Create(credLink, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(42, 42, 56)}):Play()
-end)
-credLink.MouseButton1Click:Connect(function()
-	pcall(function() setclipboard("https://discord.gg/uCUSZeuM48") end)
-	local orig = credLink.Text
-	credLink.Text = "\xe2\x9c\x93 Copied!"
-	credLink.TextColor3 = Color3.fromRGB(30, 110, 70)
-	task.delay(2, function()
-		credLink.Text = orig
-		credLink.TextColor3 = Color3.fromRGB(42, 42, 56)
-	end)
-end)
-
-end -- credits scope
+buildSettingsCard(scroll, makeCard, makeCardHeader, makeSpacer, cfgSave)
+buildCredits(scroll)
 
 -- ══ SHOP WINDOW ══
-do
 local shopWindow = Instance.new("Frame") shopWindow.Size = UDim2.new(0,265,0,330) shopWindow.Position = UDim2.new(0,410,0.5,-165) shopWindow.BackgroundColor3 = Color3.fromRGB(12,12,14) shopWindow.BorderSizePixel = 0 shopWindow.Active = true shopWindow.Draggable = true shopWindow.Visible = false shopWindow.Parent = gui
 Instance.new("UICorner", shopWindow).CornerRadius = UDim.new(0, 14) Instance.new("UIStroke", shopWindow).Color = Color3.fromRGB(32,32,38)
 local sWH = Instance.new("Frame") sWH.Size = UDim2.new(1,0,0,46) sWH.BackgroundColor3 = Color3.fromRGB(16,16,19) sWH.BorderSizePixel = 0 sWH.Parent = shopWindow
@@ -2308,9 +1734,7 @@ local sWC = Instance.new("TextButton") sWC.Size = UDim2.new(0,26,0,26) sWC.Posit
 Instance.new("UICorner", sWC).CornerRadius = UDim.new(0, 7) Instance.new("UIStroke", sWC).Color = Color3.fromRGB(34,34,44)
 sWC.MouseButton1Click:Connect(function() shopWindow.Visible = false end)
 shopOpenBtn.MouseButton1Click:Connect(function() shopWindow.Visible = not shopWindow.Visible end)
-end -- shop toggle scope
 
-do
 local shopStatusLbl = Instance.new("TextLabel") shopStatusLbl.Size = UDim2.new(1,-20,0,12) shopStatusLbl.Position = UDim2.new(0,10,0,50) shopStatusLbl.BackgroundTransparency = 1 shopStatusLbl.Text = "Select an item to purchase" shopStatusLbl.TextColor3 = Color3.fromRGB(64,64,82) shopStatusLbl.TextSize = 9 shopStatusLbl.Font = Enum.Font.Gotham shopStatusLbl.TextXAlignment = Enum.TextXAlignment.Left shopStatusLbl.Parent = shopWindow
 
 local function makeShopRow(yPos, icon, label, price, btnColor)
@@ -2364,7 +1788,6 @@ for btn, data in pairs(SHOP_ITEMS) do
 	local cb, cd2 = btn, data
 	cb.MouseButton1Click:Connect(function() task.spawn(function() buyItem(cb, cd2.name, cd2.label) end) end)
 end
-end -- shopbuy scope
 
 -- ══ LIVE SCANNER ══
 task.spawn(function()
@@ -2413,7 +1836,6 @@ task.spawn(function()
 			if not snapPos or not getgenv().ATM_RUNNING then break end
 			if not entry.drop.Parent then continue end
 			local dv = getDropValue(entry.drop)
-			-- Radius mode: NEVER move the character. Fire interaction from current position.
 			if not entry.drop.Parent then continue end
 			local cd3 = entry.drop:FindFirstChildOfClass("ClickDetector")
 			if cd3 then fireclickdetector(cd3, 0, "MouseClick")
@@ -2422,7 +1844,6 @@ task.spawn(function()
 			dropsCollected += 1
 			task.wait(0.03)
 		end
-		-- Character stays at ATM — no return teleport needed since we never left
 		isPickingUp = false
 	end
 end)
@@ -2438,8 +1859,6 @@ local function watchDropFolder()
 		if not pos then return end
 		local hrp = getHRP() if not hrp then return end
 		if (hrp.Position - pos).Magnitude > MAX_DROP_DISTANCE then return end
-		-- When radius mode is on, the radius scan loop handles all nearby drops.
-		-- watchDropFolder only acts when radius is OFF to avoid double-teleporting.
 		if not isPickingUp and not getgenv().RADIUS_ENABLED then
 			if lastATMCFrame then safeTeleport(lastATMCFrame) task.wait(0.03) end
 			pickupDrop(drop)
@@ -2524,7 +1943,7 @@ local function collectDropsAfterBreak(dropsBefore)
 		for _, entry in ipairs(nearby) do
 			if not isRunning() or not activeATMPos then break end
 			if not entry.drop.Parent then continue end
-			pickupDrop(entry.drop, getgenv().RADIUS_ENABLED) task.wait(0.04)  -- skip teleport if radius loop handles it
+			pickupDrop(entry.drop) task.wait(0.04)
 		end
 		nearby = getNew()
 	end
@@ -2673,6 +2092,7 @@ local function startFarmLoop()
 	end)
 end
 
+
 local function fireWH(title, desc, color)
 	if not getgenv().WEBHOOK_ENABLED then return end
 	local fn = getgenv()._wh_send
@@ -2687,7 +2107,6 @@ toggleBtn.MouseButton1Click:Connect(function()
 		toggleBtn.Text = "⏸  PAUSE FARMING"
 		currentAction = "Scanning for ATMs"
 		startFarmLoop()
-		fireWH("🌱  Farming Started", "ATM farming session started. Scanning for available ATMs.", 0x22C55E)
 	else
 		getgenv().ATM_RUNNING = not getgenv().ATM_RUNNING
 		if getgenv().ATM_RUNNING then
@@ -2695,17 +2114,17 @@ toggleBtn.MouseButton1Click:Connect(function()
 			toggleBtn.BackgroundColor3 = Color3.fromRGB(165, 32, 32)
 			toggleBtn.Text = "⏸  PAUSE FARMING"
 			currentAction = "Scanning for ATMs"
-			fireWH("▶  Farming Resumed", "ATM farming session has been resumed.", 0x3B82F6)
 		else
 			if farmStart then totalElapsed += os.time() - farmStart farmStart = nil end
 			toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 175, 65)
 			toggleBtn.Text = "▶  RESUME FARMING"
 			currentAction = "Paused"
 			local h = getHum() if h then h.PlatformStand = false end
-			fireWH("⏸  Farming Paused", "Session paused. Stats attached.", 0xF59E0B)
 		end
 	end
 end)
+
+restoreSettings(setRadiusToggle, setFastBreakToggle, setHiddenFarmToggle, toggleBtn)
 
 RunService.Heartbeat:Connect(function()
 	pcall(function()
@@ -2726,94 +2145,3 @@ RunService.Heartbeat:Connect(function()
 		else UpdatePlayerStatus("idle") end
 	end)
 end)
--- ══ DISCONNECT / KICK DETECTION ══
--- Fires a session summary webhook when the player is removed (kicked, leaves, or game closes).
--- game.Players.LocalPlayer.AncestryChanged fires when the LocalPlayer is removed from Players.
--- This is the most reliable hook for detecting kicks and disconnects from a LocalScript.
-do
-	local function sendSessionSummary(reason)
-		if not getgenv().WEBHOOK_ENABLED then return end
-		local fn = getgenv()._wh_send
-		if not fn then return end
-		-- Flush elapsed time before sending
-		if farmStart then
-			totalElapsed = totalElapsed + (os.time() - farmStart)
-			farmStart = nil
-		end
-		local elapsed = totalElapsed
-		local mins = math.max(elapsed / 60, 0.016)
-		local rate = math.floor(totalEarned / mins)
-		local desc = "Session ended: **" .. reason .. "**\n"
-			.. "Total Earned: **" .. formatMoney(totalEarned) .. "**\n"
-			.. "Rate: **" .. formatMoney(rate) .. "/min**\n"
-			.. "Duration: **" .. formatTime(elapsed) .. "**\n"
-			.. "ATMs Broken: **" .. tostring(atmCount) .. "**"
-		fn("🔴  Session Ended", desc, 0xEF4444, false)
-		task.wait(0.8)  -- give the request a moment to fire before Roblox shuts down the thread
-	end
-
-	-- Kick / disconnect: LocalPlayer removed from Players service
-	player.AncestryChanged:Connect(function(_, newParent)
-		if newParent == nil then
-			sendSessionSummary("Disconnected / Kicked")
-		end
-	end)
-
-	-- Close button already calls gui:Destroy() — hook closeBtn click too
-	local _origClose = closeBtn.MouseButton1Click
-	closeBtn.MouseButton1Click:Connect(function()
-		sendSessionSummary("Menu Closed")
-	end)
-end
-
--- ══ RESTORE SAVED SETTINGS ══
--- Runs after full UI is built — applies every saved value silently with no flicker.
-if _cfgLoaded then
-	task.spawn(function()
-		task.wait(0.1)  -- Let UI finish parenting to gui
-
-		-- Restore webhook URL
-		if _cfg.webhookUrl and _cfg.webhookUrl ~= "" then
-			whInput.Text = _cfg.webhookUrl
-			getgenv().WEBHOOK_URL = _cfg.webhookUrl
-			validateUrl()
-		end
-
-		-- Restore webhook toggle
-		if _cfg.webhookEnabled then
-			setWebhookToggle(true)
-		end
-
-		-- Restore ATM Radius
-		if _cfg.radiusEnabled and IS_PREMIUM then
-			pcall(function() radTrack:GetPropertyChangedSignal("Active"):Wait() end)
-			setRadiusToggle(true)
-		end
-
-		-- Restore Fast Break
-		if _cfg.fastBreak and IS_PREMIUM then
-			setFastBreakToggle(true)
-		end
-
-		-- Restore Underground Mode
-		if _cfg.hiddenFarm and IS_PREMIUM then
-			setHiddenFarmToggle(true)
-		end
-
-		-- Restore Save CPU
-		if _cfg.saveCpuEnabled then
-			getgenv().SAVE_CPU_FPS = _cfg.saveCpuFPS or 5
-			fpsInput.Text = tostring(getgenv().SAVE_CPU_FPS)
-			cpuFpsLbl.Text = getgenv().SAVE_CPU_FPS .. " FPS"
-			local fn = getgenv()._toggleSaveCPU
-			if fn then fn(true) end
-		end
-
-		-- Restore Auto Farm last (after everything else is ready)
-		if _cfg.farmRunning then
-			task.wait(0.3)
-			toggleBtn:GetPropertyChangedSignal("Text"):Wait()
-			toggleBtn.MouseButton1Click:Fire()
-		end
-	end)
-end
