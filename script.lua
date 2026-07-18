@@ -1143,6 +1143,314 @@ ugBadge.TextXAlignment = Enum.TextXAlignment.Center ugBadge.ZIndex = 3
 ugBadge.Parent = hfTrack.Parent
 Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4) end
 
+makeSpacer(autoCard, 12, 3) makeDivider(autoCard, 13) makeSpacer(autoCard, 14, 3)
+
+-- ══ WEBHOOK SECTION ══
+do
+	local whTitleRow = Instance.new("Frame")
+	whTitleRow.Size = UDim2.new(1, 0, 0, 18)
+	whTitleRow.BackgroundTransparency = 1
+	whTitleRow.LayoutOrder = 15
+	whTitleRow.Parent = autoCard
+	local whIconLbl = Instance.new("TextLabel")
+	whIconLbl.Size = UDim2.new(0, 14, 1, 0)
+	whIconLbl.BackgroundTransparency = 1
+	whIconLbl.Text = "🔔"
+	whIconLbl.TextSize = 11
+	whIconLbl.Font = Enum.Font.GothamBold
+	whIconLbl.TextXAlignment = Enum.TextXAlignment.Center
+	whIconLbl.TextYAlignment = Enum.TextYAlignment.Center
+	whIconLbl.Parent = whTitleRow
+	local whTitleLbl = Instance.new("TextLabel")
+	whTitleLbl.Size = UDim2.new(1, -20, 1, 0)
+	whTitleLbl.Position = UDim2.new(0, 20, 0, 0)
+	whTitleLbl.BackgroundTransparency = 1
+	whTitleLbl.Text = "Discord Webhook"
+	whTitleLbl.TextColor3 = Color3.fromRGB(205, 205, 215)
+	whTitleLbl.TextSize = 12
+	whTitleLbl.Font = Enum.Font.GothamBold
+	whTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	whTitleLbl.TextYAlignment = Enum.TextYAlignment.Center
+	whTitleLbl.Parent = whTitleRow
+end
+
+makeSpacer(autoCard, 16, 5)
+
+-- URL input box
+local whInputWrap = Instance.new("Frame")
+whInputWrap.Size = UDim2.new(1, 0, 0, 32)
+whInputWrap.BackgroundColor3 = Color3.fromRGB(14, 14, 19)
+whInputWrap.BorderSizePixel = 0
+whInputWrap.LayoutOrder = 17
+whInputWrap.Parent = autoCard
+Instance.new("UICorner", whInputWrap).CornerRadius = UDim.new(0, 7)
+local whInputStroke = Instance.new("UIStroke", whInputWrap)
+whInputStroke.Color = Color3.fromRGB(34, 34, 46)
+whInputStroke.Thickness = 1
+
+local whInput = Instance.new("TextBox")
+whInput.Size = UDim2.new(1, -12, 1, 0)
+whInput.Position = UDim2.new(0, 10, 0, 0)
+whInput.BackgroundTransparency = 1
+whInput.Text = ""
+whInput.PlaceholderText = "Paste Discord webhook URL..."
+whInput.PlaceholderColor3 = Color3.fromRGB(52, 52, 68)
+whInput.TextColor3 = Color3.fromRGB(195, 195, 210)
+whInput.TextSize = 10
+whInput.Font = Enum.Font.Gotham
+whInput.TextXAlignment = Enum.TextXAlignment.Left
+whInput.TextYAlignment = Enum.TextYAlignment.Center
+whInput.ClearTextOnFocus = false
+whInput.Parent = whInputWrap
+
+whInput.Focused:Connect(function()
+	TweenService:Create(whInputStroke, TweenInfo.new(0.15), {Color = Color3.fromRGB(34, 100, 200), Thickness = 1.5}):Play()
+end)
+
+makeSpacer(autoCard, 18, 5)
+
+-- Toggle + status row
+local whCtrlRow = Instance.new("Frame")
+whCtrlRow.Size = UDim2.new(1, 0, 0, 22)
+whCtrlRow.BackgroundTransparency = 1
+whCtrlRow.LayoutOrder = 19
+whCtrlRow.Parent = autoCard
+
+local whTrack = Instance.new("TextButton")
+whTrack.Size = UDim2.new(0, 36, 0, 18)
+whTrack.Position = UDim2.new(0, 0, 0.5, -9)
+whTrack.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+whTrack.Text = ""
+whTrack.BorderSizePixel = 0
+whTrack.Parent = whCtrlRow
+Instance.new("UICorner", whTrack).CornerRadius = UDim.new(1, 0)
+
+local whThumb = Instance.new("Frame")
+whThumb.Size = UDim2.new(0, 12, 0, 12)
+whThumb.Position = UDim2.new(0, 3, 0.5, -6)
+whThumb.BackgroundColor3 = Color3.fromRGB(82, 82, 105)
+whThumb.BorderSizePixel = 0
+whThumb.Parent = whTrack
+Instance.new("UICorner", whThumb).CornerRadius = UDim.new(1, 0)
+
+local whTogLbl = Instance.new("TextLabel")
+whTogLbl.Size = UDim2.new(0, 110, 1, 0)
+whTogLbl.Position = UDim2.new(0, 44, 0, 0)
+whTogLbl.BackgroundTransparency = 1
+whTogLbl.Text = "Notifications OFF"
+whTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
+whTogLbl.TextSize = 10
+whTogLbl.Font = Enum.Font.Gotham
+whTogLbl.TextXAlignment = Enum.TextXAlignment.Left
+whTogLbl.TextYAlignment = Enum.TextYAlignment.Center
+whTogLbl.Parent = whCtrlRow
+
+local whStatusDot = Instance.new("Frame")
+whStatusDot.Size = UDim2.new(0, 7, 0, 7)
+whStatusDot.AnchorPoint = Vector2.new(1, 0.5)
+whStatusDot.Position = UDim2.new(1, -56, 0.5, 0)
+whStatusDot.BackgroundColor3 = Color3.fromRGB(55, 55, 70)
+whStatusDot.BorderSizePixel = 0
+whStatusDot.Parent = whCtrlRow
+Instance.new("UICorner", whStatusDot).CornerRadius = UDim.new(1, 0)
+
+local whStatusTxt = Instance.new("TextLabel")
+whStatusTxt.Size = UDim2.new(0, 46, 1, 0)
+whStatusTxt.AnchorPoint = Vector2.new(1, 0)
+whStatusTxt.Position = UDim2.new(1, 0, 0, 0)
+whStatusTxt.BackgroundTransparency = 1
+whStatusTxt.Text = "Not set"
+whStatusTxt.TextColor3 = Color3.fromRGB(55, 55, 70)
+whStatusTxt.TextSize = 9
+whStatusTxt.Font = Enum.Font.GothamBold
+whStatusTxt.TextXAlignment = Enum.TextXAlignment.Right
+whStatusTxt.TextYAlignment = Enum.TextYAlignment.Center
+whStatusTxt.Parent = whCtrlRow
+
+makeSpacer(autoCard, 20, 6)
+
+-- Send Test button
+local whTestBtn = Instance.new("TextButton")
+whTestBtn.Size = UDim2.new(1, 0, 0, 28)
+whTestBtn.BackgroundColor3 = Color3.fromRGB(20, 45, 88)
+whTestBtn.Text = "  Send Test Webhook"
+whTestBtn.TextColor3 = Color3.fromRGB(100, 155, 230)
+whTestBtn.TextSize = 11
+whTestBtn.Font = Enum.Font.GothamBold
+whTestBtn.BorderSizePixel = 0
+whTestBtn.LayoutOrder = 21
+whTestBtn.Parent = autoCard
+Instance.new("UICorner", whTestBtn).CornerRadius = UDim.new(0, 7)
+do
+	local s = Instance.new("UIStroke", whTestBtn)
+	s.Color = Color3.fromRGB(38, 82, 160)
+	s.Thickness = 1
+end
+
+makeSpacer(autoCard, 22, 4)
+
+-- ── Webhook state ──
+getgenv().WEBHOOK_ENABLED = false
+getgenv().WEBHOOK_URL = ""
+
+local function getWalletAmount()
+	local bp = player:FindFirstChild("Backpack")
+	if not bp then return "?" end
+	local w = bp:FindFirstChild("[Wallet]")
+	if not w then return "?" end
+	local h = w:FindFirstChild("Handle")
+	if not h then return "?" end
+	local bb = h:FindFirstChildOfClass("BillboardGui")
+	if not bb then return "?" end
+	local tl = bb:FindFirstChildOfClass("TextLabel")
+	return (tl and tl.Text ~= "") and tl.Text or "?"
+end
+
+local function getLicenseTier()
+	local s = tonumber(getgenv and getgenv().LICENSE_TIMELEFT or 0) or 0
+	if s < 3600 then return "Free Trial"
+	elseif s <= 86400*4 then return "3-Day"
+	elseif s <= 86400*8 then return "Weekly"
+	elseif s <= 86400*32 then return "Monthly"
+	else return "Premium" end
+end
+
+local function jsonEsc(s)
+	return tostring(s):gsub('\\','\\\\'):gsub('"','\\"'):gsub('\n','\\n'):gsub('\r','\\r')
+end
+
+local function buildEmbed(title, desc, color, isTest)
+	local elapsed = getElapsed()
+	local mins = math.max(elapsed / 60, 0.016)
+	local rate = math.floor(totalEarned / mins)
+	local wallet = getWalletAmount()
+	local tier = getLicenseTier()
+	local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
+	local placeId = tostring(game.PlaceId)
+	local jobId = tostring(game.JobId)
+	local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time())
+
+	local fields = {
+		{n="👤  Player",   v=player.DisplayName .. "  (@" .. player.Name .. ")",  i=true},
+		{n="🆔  User ID",  v=tostring(player.UserId),                              i=true},
+		{n="🏅  License",  v=tier,                                                 i=true},
+		{n="💰  Wallet",   v=wallet,                                               i=true},
+		{n="💵  Earned",   v=formatMoney(totalEarned),                             i=true},
+		{n="📈  Rate",     v=formatMoney(rate) .. "/min",                          i=true},
+		{n="⏱  Session",  v=formatTime(elapsed),                                  i=true},
+		{n="🎮  Place ID", v=placeId,                                              i=true},
+		{n="🌐  Job ID",   v=jobId:sub(1,18) .. (jobId:len() > 18 and "..." or ""), i=true},
+	}
+
+	local fArr = {}
+	for _, f in ipairs(fields) do
+		table.insert(fArr, '{"name":"' .. jsonEsc(f.n) .. '","value":"' .. jsonEsc(f.v) .. '","inline":' .. (f.i and "true" or "false") .. '}')
+	end
+
+	local embedTitle = (isTest and "[TEST] " or "") .. title
+	return '{"embeds":[{"title":"' .. jsonEsc(embedTitle)
+		.. '","description":"' .. jsonEsc(desc)
+		.. '","color":' .. tostring(color)
+		.. ',"thumbnail":{"url":"' .. jsonEsc(avatarUrl) .. '"}'
+		.. ',"fields":[' .. table.concat(fArr, ',') .. ']'
+		.. ',"footer":{"text":"ATM Farmer  \xc2\xa7  Made by Wraith"}'
+		.. ',"timestamp":"' .. stamp .. '"'
+		.. '}]}'
+end
+
+local function setWhStatus(col, txt, strokeCol)
+	TweenService:Create(whStatusDot, TweenInfo.new(0.2), {BackgroundColor3 = col}):Play()
+	whStatusTxt.Text = txt
+	whStatusTxt.TextColor3 = col
+	if strokeCol then
+		TweenService:Create(whInputStroke, TweenInfo.new(0.2), {Color = strokeCol}):Play()
+	end
+end
+
+local function sendWebhook(title, desc, color, isTest)
+	local url = getgenv().WEBHOOK_URL
+	if not url or url == "" then return end
+	local body = buildEmbed(title, desc, color, isTest)
+	task.spawn(function()
+		local ok = pcall(function()
+			local req = (syn and syn.request) or (http and http.request) or request
+			req({Url = url, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = body})
+		end)
+		if ok then
+			setWhStatus(Color3.fromRGB(34, 197, 94), "Sent \xe2\x9c\x93", nil)
+		else
+			setWhStatus(Color3.fromRGB(210, 55, 55), "Failed", nil)
+		end
+		task.delay(4, function()
+			local valid = getgenv().WEBHOOK_URL ~= ""
+			local c = valid and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(55, 55, 70)
+			local t = valid and "Connected" or "Not set"
+			setWhStatus(c, t, nil)
+		end)
+	end)
+end
+
+-- Store reference so toggleBtn handler can call it
+getgenv()._wh_send = sendWebhook
+
+local function validateUrl()
+	local url = whInput.Text
+	getgenv().WEBHOOK_URL = url
+	local valid = url:match("^https://discord%.com/api/webhooks/")
+		or url:match("^https://ptb%.discord%.com/api/webhooks/")
+		or url:match("^https://canary%.discord%.com/api/webhooks/")
+	if valid then
+		setWhStatus(Color3.fromRGB(34, 197, 94), "Connected", Color3.fromRGB(30, 75, 30))
+	elseif url == "" then
+		setWhStatus(Color3.fromRGB(55, 55, 70), "Not set", Color3.fromRGB(34, 34, 46))
+	else
+		setWhStatus(Color3.fromRGB(210, 55, 55), "Invalid", Color3.fromRGB(80, 28, 28))
+	end
+end
+
+whInput.FocusLost:Connect(validateUrl)
+
+local whEnabled = false
+local function setWebhookToggle(on)
+	whEnabled = on
+	getgenv().WEBHOOK_ENABLED = on
+	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	if on then
+		TweenService:Create(whTrack, ti, {BackgroundColor3 = Color3.fromRGB(22, 160, 60)}):Play()
+		TweenService:Create(whThumb, ti, {Position = UDim2.new(1, -15, 0.5, -6), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+		whTogLbl.Text = "Notifications ON"
+		whTogLbl.TextColor3 = Color3.fromRGB(25, 190, 75)
+	else
+		TweenService:Create(whTrack, ti, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}):Play()
+		TweenService:Create(whThumb, ti, {Position = UDim2.new(0, 3, 0.5, -6), BackgroundColor3 = Color3.fromRGB(82, 82, 105)}):Play()
+		whTogLbl.Text = "Notifications OFF"
+		whTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
+	end
+end
+
+whTrack.MouseButton1Click:Connect(function() setWebhookToggle(not whEnabled) end)
+
+whTestBtn.MouseButton1Click:Connect(function()
+	if whInput.Text == "" then
+		whInput.PlaceholderText = "\xe2\x9a\xa0  Paste a webhook URL first!"
+		task.delay(2.5, function() whInput.PlaceholderText = "Paste Discord webhook URL..." end)
+		return
+	end
+	local origTxt, origBg = whTestBtn.Text, whTestBtn.BackgroundColor3
+	whTestBtn.Text = "  Sending..."
+	whTestBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 36)
+	sendWebhook("Test Notification", "Webhook is connected and working. ATM Farmer notifications are active.", 0x22C55E, true)
+	task.delay(1.5, function()
+		whTestBtn.Text = "  \xe2\x9c\x93 Sent!"
+		whTestBtn.BackgroundColor3 = Color3.fromRGB(16, 72, 38)
+		task.delay(2.2, function()
+			whTestBtn.Text = origTxt
+			whTestBtn.BackgroundColor3 = origBg
+		end)
+	end)
+end)
+
+
 local function animateToggle(track, thumb, on)
 	local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	if on then
@@ -1359,6 +1667,70 @@ local actionLbl = Instance.new("TextLabel") actionLbl.Size = UDim2.new(1, 0, 0, 
 local btnWrap = Instance.new("Frame") btnWrap.Size = UDim2.new(1, 0, 0, 44) btnWrap.BackgroundTransparency = 1 btnWrap.LayoutOrder = 7 btnWrap.Parent = scroll
 local toggleBtn = Instance.new("TextButton") toggleBtn.Size = UDim2.new(1, 0, 0, 44) toggleBtn.BackgroundColor3 = Color3.fromRGB(25,175,65) toggleBtn.Text = "▶  START FARMING" toggleBtn.TextColor3 = Color3.fromRGB(255,255,255) toggleBtn.TextSize = 13 toggleBtn.Font = Enum.Font.GothamBold toggleBtn.BorderSizePixel = 0 toggleBtn.Parent = btnWrap
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
+
+-- ══ CREDITS ══
+local credWrap = Instance.new("Frame")
+credWrap.Size = UDim2.new(1, 0, 0, 26)
+credWrap.BackgroundTransparency = 1
+credWrap.LayoutOrder = 8
+credWrap.Parent = scroll
+local credLayout = Instance.new("UIListLayout", credWrap)
+credLayout.FillDirection = Enum.FillDirection.Horizontal
+credLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+credLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+credLayout.Padding = UDim.new(0, 5)
+
+local function makeDot()
+	local d = Instance.new("Frame")
+	d.Size = UDim2.new(0, 3, 0, 3)
+	d.BackgroundColor3 = Color3.fromRGB(36, 36, 50)
+	d.BorderSizePixel = 0
+	d.Parent = credWrap
+	Instance.new("UICorner", d).CornerRadius = UDim.new(1, 0)
+end
+
+local credMade = Instance.new("TextLabel")
+credMade.Size = UDim2.new(0, 0, 0, 14)
+credMade.AutomaticSize = Enum.AutomaticSize.X
+credMade.BackgroundTransparency = 1
+credMade.Text = "Made by Wraith"
+credMade.TextColor3 = Color3.fromRGB(42, 42, 56)
+credMade.TextSize = 9
+credMade.Font = Enum.Font.GothamBold
+credMade.TextXAlignment = Enum.TextXAlignment.Center
+credMade.Parent = credWrap
+
+makeDot()
+
+local credLink = Instance.new("TextButton")
+credLink.Size = UDim2.new(0, 0, 0, 14)
+credLink.AutomaticSize = Enum.AutomaticSize.X
+credLink.BackgroundTransparency = 1
+credLink.Text = "discord.gg/uCUSZeuM48"
+credLink.TextColor3 = Color3.fromRGB(42, 42, 56)
+credLink.TextSize = 9
+credLink.Font = Enum.Font.Gotham
+credLink.BorderSizePixel = 0
+credLink.TextXAlignment = Enum.TextXAlignment.Center
+credLink.Parent = credWrap
+
+credLink.MouseEnter:Connect(function()
+	TweenService:Create(credLink, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(80, 105, 165)}):Play()
+end)
+credLink.MouseLeave:Connect(function()
+	TweenService:Create(credLink, TweenInfo.new(0.15), {TextColor3 = Color3.fromRGB(42, 42, 56)}):Play()
+end)
+credLink.MouseButton1Click:Connect(function()
+	pcall(function() setclipboard("https://discord.gg/uCUSZeuM48") end)
+	local orig = credLink.Text
+	credLink.Text = "\xe2\x9c\x93 Copied!"
+	credLink.TextColor3 = Color3.fromRGB(30, 110, 70)
+	task.delay(2, function()
+		credLink.Text = orig
+		credLink.TextColor3 = Color3.fromRGB(42, 42, 56)
+	end)
+end)
+
 
 -- ══ SHOP WINDOW ══
 local shopWindow = Instance.new("Frame") shopWindow.Size = UDim2.new(0,265,0,330) shopWindow.Position = UDim2.new(0,410,0.5,-165) shopWindow.BackgroundColor3 = Color3.fromRGB(12,12,14) shopWindow.BorderSizePixel = 0 shopWindow.Active = true shopWindow.Draggable = true shopWindow.Visible = false shopWindow.Parent = gui
@@ -1735,6 +2107,12 @@ local function startFarmLoop()
 	end)
 end
 
+local function fireWH(title, desc, color)
+	if not getgenv().WEBHOOK_ENABLED then return end
+	local fn = getgenv()._wh_send
+	if fn then task.spawn(fn, title, desc, color, false) end
+end
+
 toggleBtn.MouseButton1Click:Connect(function()
 	if not getgenv().ATM_STARTED then
 		getgenv().ATM_STARTED = true getgenv().ATM_RUNNING = true
@@ -1743,6 +2121,7 @@ toggleBtn.MouseButton1Click:Connect(function()
 		toggleBtn.Text = "⏸  PAUSE FARMING"
 		currentAction = "Scanning for ATMs"
 		startFarmLoop()
+		fireWH("🌱  Farming Started", "ATM farming session started. Scanning for available ATMs.", 0x22C55E)
 	else
 		getgenv().ATM_RUNNING = not getgenv().ATM_RUNNING
 		if getgenv().ATM_RUNNING then
@@ -1750,12 +2129,14 @@ toggleBtn.MouseButton1Click:Connect(function()
 			toggleBtn.BackgroundColor3 = Color3.fromRGB(165, 32, 32)
 			toggleBtn.Text = "⏸  PAUSE FARMING"
 			currentAction = "Scanning for ATMs"
+			fireWH("▶  Farming Resumed", "ATM farming session has been resumed.", 0x3B82F6)
 		else
 			if farmStart then totalElapsed += os.time() - farmStart farmStart = nil end
 			toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 175, 65)
 			toggleBtn.Text = "▶  RESUME FARMING"
 			currentAction = "Paused"
 			local h = getHum() if h then h.PlatformStand = false end
+			fireWH("⏸  Farming Paused", "Session paused. Stats attached.", 0xF59E0B)
 		end
 	end
 end)
