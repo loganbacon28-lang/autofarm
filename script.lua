@@ -21,11 +21,11 @@ local activeATMPos = nil
 local pickedUpDrops = {}
 
 local HEAVY_PUNCH_WINDUP = 0.5
-local HEAVY_PUNCH_HOLD = 5
-local HEAVY_PUNCH_COOLDOWN = 1
+local HEAVY_PUNCH_HOLD = 3.3
+local HEAVY_PUNCH_COOLDOWN = 0
 local KNIFE_WINDUP = 0.3
-local KNIFE_HOLD = 5
-local KNIFE_COOLDOWN = 0.5
+local KNIFE_HOLD = 3.3
+local KNIFE_COOLDOWN = 0.1
 local MAX_NO_DAMAGE_PUNCHES = 3
 local OPEN_SIZE_TOLERANCE = 0.2
 local OPEN_SIZE_AVAILABLE_Z = 0.09999994933605194
@@ -924,7 +924,7 @@ badgeWrapL.VerticalAlignment = Enum.VerticalAlignment.Center
 local tierBadge = Instance.new("TextLabel")
 tierBadge.Size = UDim2.new(0, 80, 0, 22)
 tierBadge.BackgroundColor3 = Color3.new(
-	licColor.R * 0.12, licColor.G * 0.12, licColor.B * 0.12)
+	math.min(licColor.R * 0.22 + 0.04, 1), math.min(licColor.G * 0.22 + 0.04, 1), math.min(licColor.B * 0.22 + 0.04, 1))
 tierBadge.BorderSizePixel = 0
 tierBadge.Text = licLabel
 tierBadge.TextColor3 = licColor
@@ -935,9 +935,7 @@ tierBadge.LayoutOrder = 1
 tierBadge.Parent = badgeWrap
 local tierBadgeC = Instance.new("UICorner", tierBadge)
 tierBadgeC.CornerRadius = UDim.new(0, 6)
-local tierBadgeS = Instance.new("UIStroke", tierBadge)
-tierBadgeS.Color = licColor
-tierBadgeS.Thickness = 1
+-- No stroke on tier badge: keeps text readable against dark bg
 
 local statusBadge = Instance.new("TextLabel")
 statusBadge.Size = UDim2.new(0, 80, 0, 16)
@@ -1067,13 +1065,13 @@ local detGL = Instance.new("UIListLayout", detGrid) detGL.FillDirection = Enum.F
 local function makeDetBox(parent, layoutOrder, bg, iconAsset, labelText, valColor)
 	local box = Instance.new("Frame") box.Size = UDim2.new(0.5, -4, 1, 0) box.BackgroundColor3 = bg box.BorderSizePixel = 0 box.LayoutOrder = layoutOrder box.Parent = parent
 	Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
-	local iconBg = Instance.new("Frame") iconBg.Size = UDim2.new(0, 32, 0, 32) iconBg.Position = UDim2.new(0, 7, 0, 14)
+	local iconBg = Instance.new("Frame") iconBg.Size = UDim2.new(0, 32, 0, 32) iconBg.Position = UDim2.new(0, 7, 0, 7)
 	iconBg.BackgroundColor3 = Color3.fromRGB(math.clamp(math.floor(valColor.R*255*0.18),0,255), math.clamp(math.floor(valColor.G*255*0.18),0,255), math.clamp(math.floor(valColor.B*255*0.18),0,255))
 	iconBg.BorderSizePixel = 0 iconBg.Parent = box
 	Instance.new("UICorner", iconBg).CornerRadius = UDim.new(0, 6)
 	local iconImg = Instance.new("ImageLabel") iconImg.Size = UDim2.new(0, 19, 0, 19) iconImg.Position = UDim2.new(0.5, -10, 0.5, -10) iconImg.BackgroundTransparency = 1 iconImg.Image = "rbxassetid://" .. tostring(iconAsset) iconImg.ScaleType = Enum.ScaleType.Fit iconImg.ImageColor3 = valColor iconImg.Parent = iconBg
-	local vL = Instance.new("TextLabel") vL.Size = UDim2.new(1, -46, 0, 22) vL.Position = UDim2.new(0, 42, 0, 10) vL.BackgroundTransparency = 1 vL.Text = "0" vL.TextColor3 = valColor vL.TextSize = 20 vL.Font = Enum.Font.GothamBold vL.TextXAlignment = Enum.TextXAlignment.Left vL.TextYAlignment = Enum.TextYAlignment.Center vL.Parent = box
-	local nL = Instance.new("TextLabel") nL.Size = UDim2.new(1, -46, 0, 12) nL.Position = UDim2.new(0, 42, 0, 34) nL.BackgroundTransparency = 1 nL.Text = labelText nL.TextColor3 = valColor nL.TextSize = 9 nL.Font = Enum.Font.Gotham nL.TextXAlignment = Enum.TextXAlignment.Left nL.TextYAlignment = Enum.TextYAlignment.Center nL.Parent = box
+	local vL = Instance.new("TextLabel") vL.Size = UDim2.new(1, -46, 0, 22) vL.Position = UDim2.new(0, 42, 0, 4) vL.BackgroundTransparency = 1 vL.Text = "0" vL.TextColor3 = valColor vL.TextSize = 20 vL.Font = Enum.Font.GothamBold vL.TextXAlignment = Enum.TextXAlignment.Left vL.TextYAlignment = Enum.TextYAlignment.Center vL.Parent = box
+	local nL = Instance.new("TextLabel") nL.Size = UDim2.new(1, -46, 0, 12) nL.Position = UDim2.new(0, 42, 0, 26) nL.BackgroundTransparency = 1 nL.Text = labelText nL.TextColor3 = valColor nL.TextSize = 9 nL.Font = Enum.Font.Gotham nL.TextXAlignment = Enum.TextXAlignment.Left nL.TextYAlignment = Enum.TextYAlignment.Center nL.Parent = box
 	return vL
 end
 
@@ -1201,6 +1199,8 @@ whInput.Font = Enum.Font.Gotham
 whInput.TextXAlignment = Enum.TextXAlignment.Left
 whInput.TextYAlignment = Enum.TextYAlignment.Center
 whInput.ClearTextOnFocus = false
+whInput.TextTruncate = Enum.TextTruncate.AtEnd
+whInput.ClipsDescendants = true
 whInput.Parent = whInputWrap
 
 whInput.Focused:Connect(function()
@@ -1319,13 +1319,36 @@ local function jsonEsc(s)
 	return tostring(s):gsub('\\','\\\\'):gsub('"','\\"'):gsub('\n','\\n'):gsub('\r','\\r')
 end
 
+-- Resolves the player's actual avatar headshot CDN URL via the Roblox Thumbnails API.
+-- www.roblox.com/headshot-thumbnail redirects to an HTML page — Discord won't render it.
+-- thumbnails.roblox.com returns JSON with the real imageUrl that Discord can embed directly.
+local _cachedAvatarUrl = nil
+local function resolveAvatarUrl()
+	if _cachedAvatarUrl then return _cachedAvatarUrl end
+	local apiUrl = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. player.UserId .. "&size=420x420&format=Png&isCircular=false"
+	local ok, result = pcall(function()
+		local req = (syn and syn.request) or (http and http.request) or request
+		return req({Url = apiUrl, Method = "GET"})
+	end)
+	if ok and result and result.Body then
+		-- Parse imageUrl from JSON: {"data":[{"targetId":...,"state":"Completed","imageUrl":"https://..."}]}
+		local imageUrl = result.Body:match('"imageUrl":"(https://[^"]+)"')
+		if imageUrl then
+			_cachedAvatarUrl = imageUrl
+			return imageUrl
+		end
+	end
+	-- Fallback: direct CDN pattern that usually works without redirect
+	return "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
+end
+
 local function buildEmbed(title, desc, color, isTest)
 	local elapsed = getElapsed()
 	local mins = math.max(elapsed / 60, 0.016)
 	local rate = math.floor(totalEarned / mins)
 	local wallet = getWalletAmount()
 	local tier = getLicenseTier()
-	local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. player.UserId .. "&width=420&height=420&format=png"
+	local avatarUrl = resolveAvatarUrl()
 	local placeId = tostring(game.PlaceId)
 	local jobId = tostring(game.JobId)
 	local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time())
@@ -1392,6 +1415,8 @@ end
 
 -- Store reference so toggleBtn handler can call it
 getgenv()._wh_send = sendWebhook
+-- Pre-warm avatar URL cache in background so first webhook fires instantly
+task.spawn(resolveAvatarUrl)
 
 local function validateUrl()
 	local url = whInput.Text
@@ -1840,25 +1865,29 @@ task.spawn(function()
 		if #toPickup == 0 then continue end
 		table.sort(toPickup, function(a, b) return a.dist < b.dist end)
 		isPickingUp = true
+		local snapPos = activeATMPos  -- snapshot so mid-loop changes don't confuse us
 		for _, entry in ipairs(toPickup) do
-			if not activeATMPos then break end
+			if not snapPos or not getgenv().ATM_RUNNING then break end
 			if not entry.drop.Parent then continue end
 			local dv = getDropValue(entry.drop)
 			local pos = entry.drop:IsA("BasePart") and entry.drop.Position or (entry.drop.PrimaryPart and entry.drop.PrimaryPart.Position)
 			if not pos then continue end
-			local cHRP = getHRP() if not cHRP then continue end
+			local cHRP = getHRP() if not cHRP then break end
 			pcall(function() cHRP.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
-			task.wait(0.05)
+			task.wait(0.04)
 			if not entry.drop.Parent then continue end
 			local cd3 = entry.drop:FindFirstChildOfClass("ClickDetector")
 			if cd3 then fireclickdetector(cd3, 0, "MouseClick")
 			else firetouchinterest(cHRP, entry.drop, true) task.wait(0.02) firetouchinterest(cHRP, entry.drop, false) end
 			if dv > 0 then totalEarned += dv end
 			dropsCollected += 1
-			task.wait(0.05)
+			task.wait(0.04)
 		end
+		-- Return to ATM position only if we're still on the same ATM
 		local fHRP = getHRP()
-		if lastATMCFrame and fHRP then pcall(function() fHRP.CFrame = lastATMCFrame end) end
+		if lastATMCFrame and fHRP and activeATMPos == snapPos then
+			pcall(function() fHRP.CFrame = lastATMCFrame end)
+		end
 		isPickingUp = false
 	end
 end)
@@ -2160,3 +2189,42 @@ RunService.Heartbeat:Connect(function()
 		else UpdatePlayerStatus("idle") end
 	end)
 end)
+-- ══ DISCONNECT / KICK DETECTION ══
+-- Fires a session summary webhook when the player is removed (kicked, leaves, or game closes).
+-- game.Players.LocalPlayer.AncestryChanged fires when the LocalPlayer is removed from Players.
+-- This is the most reliable hook for detecting kicks and disconnects from a LocalScript.
+do
+	local function sendSessionSummary(reason)
+		if not getgenv().WEBHOOK_ENABLED then return end
+		local fn = getgenv()._wh_send
+		if not fn then return end
+		-- Flush elapsed time before sending
+		if farmStart then
+			totalElapsed = totalElapsed + (os.time() - farmStart)
+			farmStart = nil
+		end
+		local elapsed = totalElapsed
+		local mins = math.max(elapsed / 60, 0.016)
+		local rate = math.floor(totalEarned / mins)
+		local desc = "Session ended: **" .. reason .. "**\n"
+			.. "Total Earned: **" .. formatMoney(totalEarned) .. "**\n"
+			.. "Rate: **" .. formatMoney(rate) .. "/min**\n"
+			.. "Duration: **" .. formatTime(elapsed) .. "**\n"
+			.. "ATMs Broken: **" .. tostring(atmCount) .. "**"
+		fn("🔴  Session Ended", desc, 0xEF4444, false)
+		task.wait(0.8)  -- give the request a moment to fire before Roblox shuts down the thread
+	end
+
+	-- Kick / disconnect: LocalPlayer removed from Players service
+	player.AncestryChanged:Connect(function(_, newParent)
+		if newParent == nil then
+			sendSessionSummary("Disconnected / Kicked")
+		end
+	end)
+
+	-- Close button already calls gui:Destroy() — hook closeBtn click too
+	local _origClose = closeBtn.MouseButton1Click
+	closeBtn.MouseButton1Click:Connect(function()
+		sendSessionSummary("Menu Closed")
+	end)
+end
