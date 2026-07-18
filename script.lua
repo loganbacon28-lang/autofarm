@@ -570,11 +570,12 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 		l.Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham l.TextXAlignment=Enum.TextXAlignment.Center l.Parent=ic return l
 	end
 	oLbl(player.Name,11,Color3.fromRGB(72,72,88),false)
+	local cwl=oLbl("Wallet: $0",11,Color3.fromRGB(88,88,105),false)
 	local cel=oLbl("$0",28,Color3.fromRGB(190,190,200),true)
-	local cpl=oLbl("+ $0",12,Color3.fromRGB(52,52,68),false)
+	local cpl=oLbl("Profit  + $0",12,Color3.fromRGB(52,52,68),false)
 	local ctl2=oLbl("00:00:00",18,Color3.fromRGB(170,170,185),true)
 	local cal=oLbl("breaking atm",10,Color3.fromRGB(48,48,62),false)
-	oLbl("discord.gg/uCUSZeuM48",9,Color3.fromRGB(36,36,48),false)
+	oLbl("discord.gg/iku",9,Color3.fromRGB(36,36,48),false)
 
 	local _cpuHB,_prevFPS=nil,60
 	local function setLGFX(on) pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("MainEvent"):FireServer("UpdateSingleSetting","LowGFX",on) end) end
@@ -588,7 +589,13 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 		baseEarned=totalEarned
 		if _cpuHB then _cpuHB:Disconnect() end
 		_cpuHB=RunService.Heartbeat:Connect(function() pcall(function()
-			cel.Text=formatMoney(totalEarned) cpl.Text="+ "..formatMoney(totalEarned-baseEarned)
+			-- Wallet
+			local bp=player:FindFirstChild("Backpack")
+			local wamt="$0"
+			if bp then local w=bp:FindFirstChild("[Wallet]") if w then local h=w:FindFirstChild("Handle") if h then local bb=h:FindFirstChildOfClass("BillboardGui") if bb then local tl=bb:FindFirstChildOfClass("TextLabel") if tl and tl.Text~="" then wamt=tl.Text end end end end end
+			cwl.Text="Wallet: "..wamt
+			cel.Text=formatMoney(totalEarned)
+			cpl.Text="Profit  + "..formatMoney(totalEarned-baseEarned)
 			ctl2.Text=fmtT(getElapsed()) cal.Text=currentAction:lower()
 		end) end)
 	end
