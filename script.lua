@@ -238,15 +238,19 @@ local function safeTeleport(cframe)
 	pcall(function() hrp.CFrame = cframe end)
 end
 
-local function pickupDrop(drop)
+-- skipTeleport: pass true when the caller has already moved the character to the drop
+-- (e.g. the radius scan loop). Prevents a second unwanted teleport.
+local function pickupDrop(drop, skipTeleport)
 	if not drop or not drop.Parent then return end
 	local hrp = getHRP()
 	if not hrp then return end
 	local dropValue = getDropValue(drop)
 	local pos = drop:IsA("BasePart") and drop.Position or (drop.PrimaryPart and drop.PrimaryPart.Position)
 	if not pos then return end
-	pcall(function() hrp.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
-	task.wait(0.03)
+	if not skipTeleport then
+		pcall(function() hrp.CFrame = CFrame.new(pos) * CFrame.new(0, 2, 0) end)
+		task.wait(0.03)
+	end
 	if not drop.Parent then return end
 	local cd = drop:FindFirstChildOfClass("ClickDetector")
 	if cd then fireclickdetector(cd, 0, "MouseClick")
@@ -1903,7 +1907,9 @@ local function watchDropFolder()
 		if not pos then return end
 		local hrp = getHRP() if not hrp then return end
 		if (hrp.Position - pos).Magnitude > MAX_DROP_DISTANCE then return end
-		if not isPickingUp then
+		-- When radius mode is on, the radius scan loop handles all nearby drops.
+		-- watchDropFolder only acts when radius is OFF to avoid double-teleporting.
+		if not isPickingUp and not getgenv().RADIUS_ENABLED then
 			if lastATMCFrame then safeTeleport(lastATMCFrame) task.wait(0.03) end
 			pickupDrop(drop)
 		end
@@ -1987,7 +1993,7 @@ local function collectDropsAfterBreak(dropsBefore)
 		for _, entry in ipairs(nearby) do
 			if not isRunning() or not activeATMPos then break end
 			if not entry.drop.Parent then continue end
-			pickupDrop(entry.drop) task.wait(0.04)
+			pickupDrop(entry.drop, getgenv().RADIUS_ENABLED) task.wait(0.04)  -- skip teleport if radius loop handles it
 		end
 		nearby = getNew()
 	end
