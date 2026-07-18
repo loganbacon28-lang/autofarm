@@ -678,7 +678,7 @@ local function hookDisconnect(closeBtn)
 end
 
 -- ══ RESTORE SETTINGS ══
-local function restoreSettings(setRadiusFn, setFBFn, setHFFn, toggleBtn)
+local function restoreSettings(setRadiusFn, setFBFn, setHFFn, toggleBtn, startFarmFn)
 	if not _cfgLoaded then return end
 	task.spawn(function()
 		task.wait(0.2)
@@ -695,7 +695,21 @@ local function restoreSettings(setRadiusFn, setFBFn, setHFFn, toggleBtn)
 			if _cpuFpsLbl then _cpuFpsLbl.Text=getgenv().SAVE_CPU_FPS.." FPS" end
 			_toggleSaveCPU(true)
 		end
-		if _cfg.farmRunning then task.wait(0.3) toggleBtn.MouseButton1Click:Fire() end
+		if _cfg.farmRunning then
+			task.wait(0.3)
+			-- Directly start the farm — :Fire() doesn't work on RBXScriptSignal
+			getgenv().ATM_STARTED = true
+			getgenv().ATM_RUNNING = true
+			farmStart = os.time()
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(165, 32, 32)
+			toggleBtn.Text = "â¸  PAUSE FARMING"
+			currentAction = "Scanning for ATMs"
+			startFarmFn()
+			if getgenv().WEBHOOK_ENABLED then
+				local fn = getgenv()._wh_send
+				if fn then task.spawn(fn, "ð±  Farming Started", "Auto-resumed from saved settings.", 0x22C55E, false) end
+			end
+		end
 	end)
 end
 
@@ -706,6 +720,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "ATMFarmer"
 gui.ResetOnSpawn = false
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.DisplayOrder = 999
 gui.Parent = gethui()
 
 -- Forward declaration — defined after main is created below, called from loading screen teardown
@@ -2124,7 +2139,7 @@ toggleBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
-restoreSettings(setRadiusToggle, setFastBreakToggle, setHiddenFarmToggle, toggleBtn)
+restoreSettings(setRadiusToggle, setFastBreakToggle, setHiddenFarmToggle, toggleBtn, startFarmLoop)
 
 RunService.Heartbeat:Connect(function()
 	pcall(function()
