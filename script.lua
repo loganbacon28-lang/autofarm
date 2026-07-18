@@ -557,7 +557,8 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 		if getgenv().SAVE_CPU_ENABLED then pcall(function() setfpscap(v) end) end
 	end)
 	-- Overlay
-	local ov=Instance.new("CanvasGroup") ov.Size=UDim2.new(1,0,1,0) ov.BackgroundColor3=Color3.fromRGB(6,6,7) ov.GroupTransparency=1 ov.ZIndex=50 ov.Visible=false ov.Parent=gui
+	local ovGui=Instance.new("ScreenGui") ovGui.Name="ATMFarmerCPUOverlay" ovGui.ResetOnSpawn=false ovGui.DisplayOrder=998 ovGui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling ovGui.Parent=gethui()
+	local ov=Instance.new("CanvasGroup") ov.Size=UDim2.new(1,0,1,0) ov.BackgroundColor3=Color3.fromRGB(6,6,7) ov.GroupTransparency=1 ov.ZIndex=1 ov.Visible=false ov.Parent=ovGui
 	local ol=Instance.new("UIListLayout",ov) ol.HorizontalAlignment=Enum.HorizontalAlignment.Center ol.VerticalAlignment=Enum.VerticalAlignment.Center ol.Padding=UDim.new(0,6)
 	local ic=Instance.new("Frame") ic.Size=UDim2.new(0,300,0,0) ic.AutomaticSize=Enum.AutomaticSize.Y ic.BackgroundColor3=Color3.fromRGB(10,10,13) ic.BorderSizePixel=0 ic.Parent=ov
 	Instance.new("UICorner",ic).CornerRadius=UDim.new(0,14) Instance.new("UIStroke",ic).Color=Color3.fromRGB(30,30,38)
