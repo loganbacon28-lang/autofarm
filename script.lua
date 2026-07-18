@@ -1205,9 +1205,14 @@ ugBadge.Parent = hfTrack.Parent
 Instance.new("UICorner", ugBadge).CornerRadius = UDim.new(0, 4) end
 
 
+-- ══ PRE-DECLARE: locals shared across do..end scope blocks ══
+local whInput, whStatusDot, whStatusTxt, whInputStroke, whTestBtn, validateUrl, setWebhookToggle
+local cpuFpsLbl, fpsInput
+
 makeSpacer(autoCard, 12, 3) makeDivider(autoCard, 13) makeSpacer(autoCard, 14, 3)
 
 -- ══ SAVE CPU ROW ══
+do
 local cpuRowWrap = Instance.new("Frame")
 cpuRowWrap.Size = UDim2.new(1, 0, 0, 0)
 cpuRowWrap.AutomaticSize = Enum.AutomaticSize.Y
@@ -1234,7 +1239,7 @@ cpuTitleLbl.Font = Enum.Font.GothamBold
 cpuTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
 cpuTitleLbl.Parent = cpuTitleRow
 
-local cpuFpsLbl = Instance.new("TextLabel")
+cpuFpsLbl = Instance.new("TextLabel")
 cpuFpsLbl.Size = UDim2.new(0, 110, 1, 0)
 cpuFpsLbl.Position = UDim2.new(1, -110, 0, 0)
 cpuFpsLbl.BackgroundTransparency = 1
@@ -1339,7 +1344,7 @@ Instance.new("UICorner", fpsInputWrap).CornerRadius = UDim.new(0, 7)
 local fpsInputStroke = Instance.new("UIStroke", fpsInputWrap)
 fpsInputStroke.Color = Color3.fromRGB(38, 38, 52) fpsInputStroke.Thickness = 1
 
-local fpsInput = Instance.new("TextBox")
+fpsInput = Instance.new("TextBox")
 fpsInput.Size = UDim2.new(1, -10, 1, 0)
 fpsInput.Position = UDim2.new(0, 5, 0, 0)
 fpsInput.BackgroundTransparency = 1
@@ -1569,6 +1574,7 @@ end)
 
 -- Store toggleCPU for settings restore
 getgenv()._toggleSaveCPU = toggleCPU
+end -- save cpu scope
 
 
 makeSpacer(autoCard, 23, 3) makeDivider(autoCard, 24) makeSpacer(autoCard, 25, 3)
@@ -1612,11 +1618,11 @@ whInputWrap.BorderSizePixel = 0
 whInputWrap.LayoutOrder = 17
 whInputWrap.Parent = autoCard
 Instance.new("UICorner", whInputWrap).CornerRadius = UDim.new(0, 7)
-local whInputStroke = Instance.new("UIStroke", whInputWrap)
+whInputStroke = Instance.new("UIStroke", whInputWrap)
 whInputStroke.Color = Color3.fromRGB(34, 34, 46)
 whInputStroke.Thickness = 1
 
-local whInput = Instance.new("TextBox")
+whInput = Instance.new("TextBox")
 whInput.Size = UDim2.new(1, -12, 1, 0)
 whInput.Position = UDim2.new(0, 10, 0, 0)
 whInput.BackgroundTransparency = 1
@@ -1675,7 +1681,7 @@ whTogLbl.TextXAlignment = Enum.TextXAlignment.Left
 whTogLbl.TextYAlignment = Enum.TextYAlignment.Center
 whTogLbl.Parent = whCtrlRow
 
-local whStatusDot = Instance.new("Frame")
+whStatusDot = Instance.new("Frame")
 whStatusDot.Size = UDim2.new(0, 7, 0, 7)
 whStatusDot.AnchorPoint = Vector2.new(1, 0.5)
 whStatusDot.Position = UDim2.new(1, -56, 0.5, 0)
@@ -1684,7 +1690,7 @@ whStatusDot.BorderSizePixel = 0
 whStatusDot.Parent = whCtrlRow
 Instance.new("UICorner", whStatusDot).CornerRadius = UDim.new(1, 0)
 
-local whStatusTxt = Instance.new("TextLabel")
+whStatusTxt = Instance.new("TextLabel")
 whStatusTxt.Size = UDim2.new(0, 46, 1, 0)
 whStatusTxt.AnchorPoint = Vector2.new(1, 0)
 whStatusTxt.Position = UDim2.new(1, 0, 0, 0)
@@ -1700,7 +1706,7 @@ whStatusTxt.Parent = whCtrlRow
 makeSpacer(autoCard, 20, 6)
 
 -- Send Test button
-local whTestBtn = Instance.new("TextButton")
+whTestBtn = Instance.new("TextButton")
 whTestBtn.Size = UDim2.new(1, 0, 0, 28)
 whTestBtn.BackgroundColor3 = Color3.fromRGB(20, 45, 88)
 whTestBtn.Text = "  Send Test Webhook"
@@ -2083,6 +2089,7 @@ hfTrack.MouseButton1Click:Connect(function()
 end)
 
 -- ══ STATS CARD ══
+do
 local statsCard = makeCard(5)
 makeCardHeader(statsCard, 1, 92424302331652, "Stats", true)
 makeSpacer(statsCard, 2, 9)
@@ -2113,6 +2120,7 @@ local dropsVal    = makeStatCell(2, "Drops Collected")
 local skippedVal  = makeStatCell(3, "ATMs Skipped")
 local earnRateVal = makeStatCell(4, "Earn Rate")
 earnRateVal.TextColor3 = Color3.fromRGB(25, 190, 75)
+end -- stats scope
 
 local actionCard = makeCard(6)
 makeCardHeader(actionCard, 1, "▶", "Current Action")
@@ -2125,6 +2133,7 @@ Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
 
 
 -- ══ SAVE SETTINGS CARD ══
+do
 local saveCard = makeCard(9)
 makeCardHeader(saveCard, 1, "💾", "Settings")
 makeSpacer(saveCard, 2, 8)
@@ -2211,7 +2220,7 @@ resetBtn.MouseButton1Click:Connect(function()
 		resetBtn.TextColor3 = Color3.fromRGB(180, 55, 55)
 	end
 end)
-
+end -- save settings scope
 
 -- ══ CREDITS ══
 local credWrap = Instance.new("Frame")
