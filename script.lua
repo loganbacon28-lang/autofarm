@@ -575,7 +575,7 @@ local function buildSaveCPUUI(autoCard, makeSpacer, makeDivider, gui, main)
 	local cpl=oLbl("Profit  + $0",12,Color3.fromRGB(52,52,68),false)
 	local ctl2=oLbl("00:00:00",18,Color3.fromRGB(170,170,185),true)
 	local cal=oLbl("breaking atm",10,Color3.fromRGB(48,48,62),false)
-	oLbl("discord.gg/iku",9,Color3.fromRGB(36,36,48),false)
+	oLbl("discord.gg/uCUSZeuM48",9,Color3.fromRGB(36,36,48),false)
 
 	local _cpuHB,_prevFPS=nil,60
 	local function setLGFX(on) pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("MainEvent"):FireServer("UpdateSingleSetting","LowGFX",on) end) end
