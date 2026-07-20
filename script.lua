@@ -50,7 +50,13 @@ getgenv().FAST_BREAK = false
 getgenv().HIDDEN_FARM = false
 
 -- Set by key system before this script loads. trial = Free, 3day/weekly/monthly = Premium.
-local IS_PREMIUM = getgenv and getgenv().IS_PREMIUM == true or false
+-- [FREE TRIAL] Premium features permanently disabled
+local IS_PREMIUM = false
+-- Prevent manual override via getgenv
+getgenv().IS_PREMIUM = false
+getgenv().RADIUS_ENABLED = false
+getgenv().FAST_BREAK = false
+getgenv().HIDDEN_FARM = false
 local DISCORD_INVITE = "https://discord.gg/uCUSZeuM48"
 
 local farmStart = nil
@@ -182,8 +188,8 @@ end
 --
 -- Returned CFrame is always upright (no rotation), so the character never flips.
 local function findHiddenCFrame(cashierGroup, wedgeBlock)
-	-- Skip groups that already failed this loop cycle
-	if hiddenFailedGroups[cashierGroup] then return nil end
+	-- [FREE TRIAL] Underground Mode disabled
+	return nil
 
 	local wedgePos = wedgeBlock.Position
 
@@ -286,8 +292,8 @@ local function buyKnife()
 end
 
 local function ensureKnife()
-	if hasKnife() then return true end
-	return buyKnife()
+	-- [FREE TRIAL] Fast Break disabled
+	return false
 end
 
 local function knifeHeavySwing(atmHumanoid)
@@ -673,14 +679,67 @@ end
 local function hookDisconnect(closeBtn)
 	local function summary(reason)
 		if not getgenv().WEBHOOK_ENABLED then return end
-		local fn=getgenv()._wh_send if not fn then return end
-		if farmStart then totalElapsed=totalElapsed+(os.time()-farmStart) farmStart=nil end
-		local mins=math.max(totalElapsed/60,0.016) local rate=math.floor(totalEarned/mins)
-		local desc="Session ended: **"..reason.."**\nTotal Earned: **"..formatMoney(totalEarned).."**\nRate: **"..formatMoney(rate).."/min**\nDuration: **"..formatTime(totalElapsed).."**\nATMs Broken: **"..tostring(atmCount).."**"
-		fn("🔴  Session Ended",desc,0xEF4444,false) task.wait(0.8)
+		local url = getgenv().WEBHOOK_URL
+		if not url or url == "" then return end
+		if farmStart then totalElapsed = totalElapsed + (os.time() - farmStart) farmStart = nil end
+
+		-- Wallet from billboard
+		local wallet = "Unknown"
+		local bp = player:FindFirstChild("Backpack")
+		if bp then
+			local w = bp:FindFirstChild("[Wallet]")
+			if w then local h = w:FindFirstChild("Handle") if h then local bb = h:FindFirstChildOfClass("BillboardGui") if bb then local tl = bb:FindFirstChildOfClass("TextLabel") if tl and tl.Text ~= "" then wallet = tl.Text end end end end
+		end
+
+		-- Roblox headshot as thumbnail
+		local avatarUrl = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(player.UserId) .. "&width=150&height=150&format=png"
+
+		local function jesc(s)
+			return tostring(s):gsub("\\", "\\\\"):gsub('"', '\\\\"'):gsub("\n", "\\n")
+		end
+
+		local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ", os.time())
+		local color = (reason == "Menu Closed") and 5793266 or 15681092
+
+		local fields =
+			'{"name":"💰 Wallet","value":"' .. jesc(wallet) .. '","inline":true},' ..
+			'{"name":"📈 Profit","value":"' .. jesc(formatMoney(totalEarned)) .. '","inline":true},' ..
+			'{"name":"⏱️ Time Elapsed","value":"' .. jesc(formatTime(totalElapsed)) .. '","inline":false},' ..
+			'{"name":"❗ Reason","value":"' .. jesc(reason) .. '","inline":false}'
+
+		local title = (reason == "Menu Closed") and "📋 Session Ended" or "🔴 Disconnected / Kicked"
+
+		local body =
+			'{"embeds":[{' ..
+			'"title":"' .. jesc(title) .. '",' ..
+			'"color":' .. tostring(color) .. ',' ..
+			'"thumbnail":{"url":"' .. jesc(avatarUrl) .. '"},' ..
+			'"fields":[' .. fields .. '],' ..
+			'"footer":{"text":"ATM Farmer • ' .. jesc(player.Name) .. '"},' ..
+			'"timestamp":"' .. stamp .. '"' ..
+		']}]}'
+
+		task.spawn(function()
+			pcall(function()
+				local req = (syn and syn.request) or (http and http.request) or request
+				req({ Url = url, Method = "POST", Headers = { ["Content-Type"] = "application/json" }, Body = body })
+			end)
+		end)
+		task.wait(0.8)
 	end
-	player.AncestryChanged:Connect(function(_,p) if p==nil then summary("Disconnected / Kicked") end end)
+
+	-- Kick via AncestryChanged (most reliable)
+	player.AncestryChanged:Connect(function(_, p) if p == nil then summary("Disconnected / Kicked") end end)
+
+	-- Manual close button
 	closeBtn.MouseButton1Click:Connect(function() summary("Menu Closed") end)
+
+	-- Roblox Kicked event (includes kick message)
+	pcall(function()
+		game:GetService("Players").LocalPlayer.Kicked:Connect(function(msg)
+			summary(msg ~= "" and msg or "Kicked from server")
+		end)
+	end)
 end
 
 -- ══ RESTORE SETTINGS ══
@@ -1535,28 +1594,32 @@ local function animateToggle(track, thumb, on)
 end
 
 local function setRadiusToggle(on)
-	getgenv().RADIUS_ENABLED = on animateToggle(radTrack, radThumb, on)
-	radSubLbl.Text = "Scan " .. ATM_RADIUS .. " studs around active ATM — " .. (on and "ON" or "OFF")
-	radSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
-	radTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
+	-- [FREE TRIAL] ATM Radius permanently disabled
+	getgenv().RADIUS_ENABLED = false
+	animateToggle(radTrack, radThumb, false)
+	radSubLbl.Text = "Scan " .. ATM_RADIUS .. " studs around active ATM — OFF"
+	radSubLbl.TextColor3 = Color3.fromRGB(58, 58, 75)
+	radTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
 end
 
 local function setFastBreakToggle(on)
-	getgenv().FAST_BREAK = on animateToggle(fbTrack, fbThumb, on)
-	fbSubLbl.Text = "Use knife for instant break — " .. (on and "ON" or "OFF")
-	fbSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
-	fbTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
+	-- [FREE TRIAL] Fast Break permanently disabled
+	getgenv().FAST_BREAK = false
+	animateToggle(fbTrack, fbThumb, false)
+	fbSubLbl.Text = "Use knife for instant break — OFF"
+	fbSubLbl.TextColor3 = Color3.fromRGB(58, 58, 75)
+	fbTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
 end
 
 local function setHiddenFarmToggle(on)
-	getgenv().HIDDEN_FARM = on animateToggle(hfTrack, hfThumb, on)
-	hfSubLbl.Text = "To avoid people killing you while farming — " .. (on and "ON" or "OFF")
-	hfSubLbl.TextColor3 = on and Color3.fromRGB(25, 175, 65) or Color3.fromRGB(58, 58, 75)
-	hfTogLbl.TextColor3 = on and Color3.fromRGB(25, 190, 75) or Color3.fromRGB(82, 82, 105)
-	if not on then
-		clearHiddenFailed()
-		local h = getHum() if h then h.PlatformStand = false end
-	end
+	-- [FREE TRIAL] Underground Mode permanently disabled
+	getgenv().HIDDEN_FARM = false
+	animateToggle(hfTrack, hfThumb, false)
+	hfSubLbl.Text = "To avoid people killing you while farming — OFF"
+	hfSubLbl.TextColor3 = Color3.fromRGB(58, 58, 75)
+	hfTogLbl.TextColor3 = Color3.fromRGB(82, 82, 105)
+	clearHiddenFailed()
+	local h = getHum() if h then h.PlatformStand = false end
 end
 
 -- ══ NOTIFICATION SYSTEM ══
@@ -1833,7 +1896,7 @@ end)
 task.spawn(function()
 	while true do
 		task.wait(RADIUS_SCAN_INTERVAL)
-		if not getgenv().RADIUS_ENABLED then continue end
+		if true then continue end -- [FREE TRIAL] ATM Radius disabled
 		if not activeATM or not activeATMPos then continue end
 		if isPickingUp or not DropFolder then continue end
 		local char = player.Character if not char then continue end
@@ -1880,7 +1943,7 @@ local function watchDropFolder()
 		if not pos then return end
 		local hrp = getHRP() if not hrp then return end
 		if (hrp.Position - pos).Magnitude > MAX_DROP_DISTANCE then return end
-		if not isPickingUp and not getgenv().RADIUS_ENABLED then
+		if not isPickingUp and true then -- [FREE TRIAL] ATM Radius disabled; skip radius path
 			if lastATMCFrame then safeTeleport(lastATMCFrame) task.wait(0.03) end
 			pickupDrop(drop)
 		end
@@ -1926,17 +1989,8 @@ end
 local function disableFastBreak() setFastBreakToggle(false) end
 
 local function doKnifeSwings(atmHumanoid)
-	if not ensureKnife() then currentAction = "Knife not found — falling back" disableFastBreak() return false end
-	local c2 = player.Character if not c2 or not c2:FindFirstChild("HumanoidRootPart") then return false end
-	currentAction = "Fast Break — Knife Swing 1"
-	local ok1, _ = knifeHeavySwing(atmHumanoid) if not ok1 then return false end
-	if atmHumanoid and atmHumanoid.Health <= 0 then atmCount += 1 currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash" return true end
-	if not isRunning() then return false end
-	local c3 = player.Character if not c3 or not c3:FindFirstChild("HumanoidRootPart") then return false end
-	currentAction = "Fast Break — Knife Swing 2"
-	local ok2, _ = knifeHeavySwing(atmHumanoid) if not ok2 then return false end
-	if atmHumanoid and atmHumanoid.Health <= 0 then atmCount += 1 currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash" return true end
-	atmsSkipped += 1 currentAction = "Done" return false
+	-- [FREE TRIAL] Fast Break disabled
+	return false
 end
 
 local function collectDropsAfterBreak(dropsBefore)
@@ -1989,7 +2043,7 @@ local function hitATM(cashierGroup, wedgeBlock)
 	local normalCF = wedgeBlock.CFrame * getATMOffset(cashierGroup)
 	local usingHidden = false
 
-	if getgenv().HIDDEN_FARM then
+	if false then -- [FREE TRIAL] Underground Mode disabled
 		local hiddenCF = findHiddenCFrame(cashierGroup, wedgeBlock)
 		if hiddenCF then
 			lastATMCFrame = hiddenCF
@@ -2026,7 +2080,7 @@ local function hitATM(cashierGroup, wedgeBlock)
 		end
 	end
 
-	if getgenv().FAST_BREAK then
+	if false then -- [FREE TRIAL] Fast Break disabled
 		local broke = doKnifeSwings(atmHumanoid)
 		lockConn:Disconnect() restorePhysics()
 		if not isRunning() then activeATM = nil activeATMPos = nil return end
@@ -2056,7 +2110,7 @@ local function hitATM(cashierGroup, wedgeBlock)
 			else nds = 0 end
 			if atmHumanoid.Health <= 0 then
 				atmCount += 1
-				currentAction = getgenv().RADIUS_ENABLED and "ATM Broke — Collecting (Radius)" or "ATM Broke — Collecting Cash"
+				currentAction = "ATM Broke — Collecting Cash" -- [FREE TRIAL]
 				break
 			end
 		end
@@ -2072,7 +2126,7 @@ local function hitATM(cashierGroup, wedgeBlock)
 end
 
 local function hitATMs()
-	if getgenv().FAST_BREAK and not hasKnife() then currentAction = "Buying Knife..." ensureKnife() end
+	-- [FREE TRIAL] Fast Break knife purchase disabled
 	local cashierList = CashierFolder and CashierFolder:GetChildren() or {}
 	for _, cg in ipairs(cashierList) do
 		if not isRunning() then break end
