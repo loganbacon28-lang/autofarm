@@ -190,43 +190,6 @@ end
 local function findHiddenCFrame(cashierGroup, wedgeBlock)
 	-- [FREE TRIAL] Underground Mode disabled
 	return nil
-
-	local wedgePos = wedgeBlock.Position
-
-	-- Raycast params: exclude the cashier structure so we hit the world floor, not the counter
-	local params = RaycastParams.new()
-	params.FilterDescendantsInstances = {cashierGroup}
-	params.FilterType = Enum.RaycastFilterType.Exclude
-
-	-- Cast from just below the wedge center downward
-	local origin = Vector3.new(wedgePos.X, wedgePos.Y - 0.5, wedgePos.Z)
-	local result = workspace:Raycast(origin, Vector3.new(0, -HF_RAYCAST_DIST, 0), params)
-
-	local hiddenY
-	if result then
-		local floorY = result.Position.Y
-		local gap    = wedgePos.Y - floorY
-
-		if gap >= HF_CHAR_HEIGHT then
-			-- Roomy cavity: stand with feet just above the floor
-			hiddenY = floorY + HF_HOVER_ABOVE
-		else
-			-- Tight or no cavity: clip slightly below the floor surface
-			-- PlatformStand will keep us here despite physics
-			hiddenY = floorY - HF_BELOW_FLOOR
-		end
-	else
-		-- No floor detected within range — drop a fixed amount
-		hiddenY = wedgePos.Y - 8
-	end
-
-	-- Reject if the hidden Y is too close to the wedge (not hidden at all)
-	if hiddenY >= wedgePos.Y - HF_MIN_DEPTH then
-		return nil
-	end
-
-	-- Return a clean upright CFrame at the hidden position (same X/Z as wedge)
-	return CFrame.new(wedgePos.X, hiddenY, wedgePos.Z)
 end
 
 local function snapshotDrops()
